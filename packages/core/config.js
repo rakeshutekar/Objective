@@ -22,6 +22,8 @@ export const config = {
     "postgres://objective:objective@localhost:5432/objective",
   ),
   databasePoolMax: intEnv("OBJECTIVE_DATABASE_POOL_MAX", 50),
+  databaseLockTimeoutMs: intEnv("OBJECTIVE_DATABASE_LOCK_TIMEOUT_MS", 5_000),
+  databaseStatementTimeoutMs: intEnv("OBJECTIVE_DATABASE_STATEMENT_TIMEOUT_MS", 30_000),
   agentApiKey: env("OBJECTIVE_AGENT_API_KEY", "dev-agent-key"),
   adminToken: env("OBJECTIVE_ADMIN_TOKEN", "dev-admin-token"),
   apiRequestTimeoutMs: intEnv("OBJECTIVE_API_REQUEST_TIMEOUT_MS", 10_000),

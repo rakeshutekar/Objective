@@ -37,10 +37,12 @@ export function leaseHints(ticket, leaseToken = ticket?.leaseToken) {
 }
 
 function compactManifest(tools, pluginKind) {
-  const manifest = toolManifest({ tools: [], pluginKind });
+  const { tools: _omittedTools, ...manifest } = toolManifest({ tools: [], pluginKind });
   return {
     ...manifest,
     toolCount: tools.length,
+    toolsOmitted: true,
+    toolManifestTool: "objective_tool_manifest",
   };
 }
 

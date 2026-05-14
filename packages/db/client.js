@@ -25,6 +25,12 @@ export async function withTransaction(fn) {
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
+    if (config.databaseLockTimeoutMs > 0) {
+      await client.query(`SET LOCAL lock_timeout = '${config.databaseLockTimeoutMs}ms'`);
+    }
+    if (config.databaseStatementTimeoutMs > 0) {
+      await client.query(`SET LOCAL statement_timeout = '${config.databaseStatementTimeoutMs}ms'`);
+    }
     const result = await fn(client);
     await client.query("COMMIT");
     return result;

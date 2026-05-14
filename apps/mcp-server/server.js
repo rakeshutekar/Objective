@@ -1,4 +1,5 @@
 import { config } from "../../packages/core/config.js";
+import { normalizeDatabaseError } from "../../packages/core/validation.js";
 import { createTools, publicToolDefinitions } from "./tools.js";
 
 const tools = createTools();
@@ -51,6 +52,7 @@ async function handle(request) {
           ],
         });
       } catch (err) {
+        const normalized = normalizeDatabaseError(err);
         result(request.id, {
           isError: true,
           content: [
@@ -58,9 +60,9 @@ async function handle(request) {
               type: "text",
               text: JSON.stringify(
                 {
-                  error: err.payload?.error ?? err.code ?? "objective_tool_error",
-                  message: err.payload?.message ?? err.message,
-                  details: err.payload?.details ?? err.details,
+                  error: normalized.payload?.error ?? normalized.code ?? "objective_tool_error",
+                  message: normalized.payload?.message ?? normalized.message,
+                  details: normalized.payload?.details ?? normalized.details,
                 },
                 null,
                 prettyResponses ? 2 : 0,

@@ -340,9 +340,11 @@ Common variables:
 ```text
 OBJECTIVE_DATABASE_URL=postgres://objective:objective@localhost:5432/objective
 OBJECTIVE_DATABASE_POOL_MAX=50
+OBJECTIVE_DATABASE_LOCK_TIMEOUT_MS=5000
+OBJECTIVE_DATABASE_STATEMENT_TIMEOUT_MS=30000
 OBJECTIVE_API_BASE=http://127.0.0.1:3000
 OBJECTIVE_AGENT_API_KEY=dev-agent-key
-OBJECTIVE_ADMIN_API_KEY=dev-admin-key
+OBJECTIVE_ADMIN_TOKEN=dev-admin-token
 OBJECTIVE_API_REQUEST_TIMEOUT_MS=10000
 OBJECTIVE_HEALTH_CHECK_TIMEOUT_MS=1500
 OBJECTIVE_DEFAULT_PAGE_SIZE=25
@@ -419,7 +421,7 @@ The current test suite verifies:
 Current local verification:
 
 ```text
-29 tests passing
+30 tests passing
 ```
 
 ## Completion Gate
@@ -444,10 +446,13 @@ Objective keeps agent tool calls bounded and compact by default:
 
 - MCP responses use compact JSON unless `OBJECTIVE_MCP_PRETTY=true`.
 - List tools return compact bounded pages by default and accept `limit`, `cursor`, `q`, `createdAfter`, and `includeArchived`.
+- Database lock waits fail fast after `OBJECTIVE_DATABASE_LOCK_TIMEOUT_MS` so agents retry instead of hanging on a blocked ticket.
+- Database statements are bounded by `OBJECTIVE_DATABASE_STATEMENT_TIMEOUT_MS`.
 - Agent API requests time out after `OBJECTIVE_API_REQUEST_TIMEOUT_MS`.
 - Health checks run database and storage checks in parallel with `OBJECTIVE_HEALTH_CHECK_TIMEOUT_MS`.
 - `objective_get_ticket_events` returns the latest 25 compact events by default; pass `includeData: true` for full event data.
-- `objective_agent_bootstrap` and composed workflow tools should be preferred over manual primitive-call stitching.
+- `objective_agent_bootstrap` returns compact runtime/plugin status; use `objective_tool_manifest` when an agent needs the full tool schema.
+- Composed workflow tools should be preferred over manual primitive-call stitching.
 
 These defaults reduce tool latency and token usage while keeping the full structured payload available to agents.
 

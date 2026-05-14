@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import test from "node:test";
 import { createServer } from "../apps/web/server.js";
+import { toolManifest } from "../packages/core/manifest.js";
 import { closePool } from "../packages/db/client.js";
 import { migrate } from "../packages/db/migrate.js";
 
@@ -64,7 +65,12 @@ test("manifest and bootstrap expose plugin status and stable agent identity", as
   try {
     const apiManifest = await fetch(`${apiBase}/api/tool-manifest?pluginKind=claude`).then((response) => response.json());
     assert.equal(apiManifest.plugin.pluginKind, "claude");
+    assert.equal(apiManifest.plugin.manifestExists, true);
     assert.equal(apiManifest.plugin.skillExists, true);
+
+    const directManifest = toolManifest({ pluginKind: "codex" });
+    assert.equal(directManifest.plugin.manifestExists, true);
+    assert.ok(directManifest.plugin.manifestPath.endsWith(".codex-plugin/plugin.json"));
 
     await withMcp({ OBJECTIVE_API_BASE: apiBase }, async (call) => {
       const manifest = parseToolText(await call("objective_tool_manifest", { pluginKind: "codex" }));
@@ -92,6 +98,10 @@ test("manifest and bootstrap expose plugin status and stable agent identity", as
       assert.equal(first.agent.id, second.agent.id);
       assert.ok(Array.isArray(first.availableTickets));
       assert.ok(Array.isArray(first.activeWork));
+      assert.equal(first.manifest.tools, undefined);
+      assert.equal(first.manifest.toolsOmitted, true);
+      assert.ok(first.manifest.toolCount > 0);
+      assert.equal(first.manifest.toolManifestTool, "objective_tool_manifest");
     });
   } finally {
     await new Promise((resolve) => server.close(resolve));

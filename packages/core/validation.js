@@ -71,5 +71,21 @@ export function normalizeDatabaseError(err) {
   if (err?.code === "22P02") {
     return new ObjectiveError("invalid_uuid_format", "One or more ID fields must be valid UUIDs.", 400);
   }
+  if (err?.code === "55P03") {
+    return new ObjectiveError(
+      "database_lock_timeout",
+      "Objective timed out waiting for a database lock. Retry the operation.",
+      409,
+      err.details,
+    );
+  }
+  if (err?.code === "57014" && /statement timeout/i.test(err.message ?? "")) {
+    return new ObjectiveError(
+      "database_statement_timeout",
+      "Objective database query exceeded the configured statement timeout.",
+      503,
+      err.details,
+    );
+  }
   return err;
 }

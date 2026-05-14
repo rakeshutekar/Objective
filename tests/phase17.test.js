@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { config } from "../packages/core/config.js";
 import {
   claimFiles,
   claimTicket,
@@ -8,8 +9,9 @@ import {
   createTicket,
   updateTicket,
 } from "../packages/core/lifecycle.js";
+import { normalizeDatabaseError } from "../packages/core/validation.js";
 import { keepalive } from "../packages/core/workflows.js";
-import { closePool, query } from "../packages/db/client.js";
+import { closePool, getPool, query } from "../packages/db/client.js";
 import { migrate } from "../packages/db/migrate.js";
 
 test("claimed ticket mutations expose and extend lease hints", async () => {
@@ -58,6 +60,41 @@ test("claimed ticket mutations expose and extend lease hints", async () => {
   });
   assert.ok(alive.heartbeat.id);
   assert.equal(alive.lease.leaseToken, claimed.leaseToken);
+});
+
+test("ticket lock waits fail fast with actionable errors", async () => {
+  await migrate();
+  const previousLockTimeoutMs = config.databaseLockTimeoutMs;
+  config.databaseLockTimeoutMs = 100;
+  const agent = await createAgent({ name: "Phase 17 Lock Agent", kind: "codex" });
+  const project = await createProject({ name: "Phase 17 Lock Timeout", description: "Bound lock waits" });
+  const created = await createTicket({
+    projectId: project.id,
+    actorAgentId: agent.id,
+    title: "Lock timeout ticket",
+    why: "Agents should not wait minutes on row locks",
+    description: "Hold the ticket row and verify claim fails quickly.",
+  });
+  const locker = await getPool().connect();
+
+  try {
+    await locker.query("BEGIN");
+    await locker.query("SELECT * FROM tickets WHERE id = $1 FOR UPDATE", [created.ticket.id]);
+    const startedAt = Date.now();
+    await assert.rejects(
+      claimTicket({ ticketId: created.ticket.id, agentId: agent.id }),
+      (err) => {
+        const normalized = normalizeDatabaseError(err);
+        assert.equal(normalized.code, "database_lock_timeout");
+        return true;
+      },
+    );
+    assert.ok(Date.now() - startedAt < 3_000);
+  } finally {
+    await locker.query("ROLLBACK").catch(() => null);
+    locker.release();
+    config.databaseLockTimeoutMs = previousLockTimeoutMs;
+  }
 });
 
 test.after(async () => {
