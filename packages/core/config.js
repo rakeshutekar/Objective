@@ -12,9 +12,13 @@ export function intEnv(name, fallback) {
   return parsed;
 }
 
+export function normalizeApiBase(value) {
+  return value.replace("://localhost", "://127.0.0.1").replace(/\/$/, "");
+}
+
 export const config = {
   port: intEnv("OBJECTIVE_PORT", 3000),
-  apiBase: env("OBJECTIVE_API_BASE", "http://127.0.0.1:3000"),
+  apiBase: normalizeApiBase(env("OBJECTIVE_API_BASE", "http://127.0.0.1:3000")),
   version: env("OBJECTIVE_VERSION", "0.2.0"),
   schemaVersion: env("OBJECTIVE_SCHEMA_VERSION", "002_agent_ergonomics"),
   databaseUrl: env(

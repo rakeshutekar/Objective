@@ -4,7 +4,7 @@ import { assertCondition, ObjectiveError } from "./errors.js";
 import { withIdempotency } from "./idempotency.js";
 import { appendCursorFilter, cursorFromRow, pageLimit, pageResult } from "./pagination.js";
 import { normalizePathPattern, patternsOverlap } from "./path-locks.js";
-import { assertUuid, parseIsoDate } from "./validation.js";
+import { assertUuid, isUuid, parseIsoDate } from "./validation.js";
 import { query, withTransaction } from "../db/client.js";
 import { putArtifactObject, presignedArtifactUrl } from "../storage/minio.js";
 
@@ -88,6 +88,29 @@ function normalizeProject(row) {
 function artifactDownloadUrl(artifactId) {
   return `${config.apiBase}/api/artifacts/${artifactId}/download`;
 }
+
+function normalizeArtifactType(type) {
+  const normalized = String(type ?? "").trim().toLowerCase();
+  const aliases = {
+    log: "test-log",
+    proof: "text-proof",
+    text: "text-proof",
+    json: "json-proof",
+    file: "other-file",
+    screenshot: "screenshot",
+  };
+  return aliases[normalized] ?? normalized;
+}
+
+const artifactTypes = new Set([
+  "screenshot",
+  "computer-use-screenshot",
+  "browser-screenshot",
+  "test-log",
+  "json-proof",
+  "text-proof",
+  "other-file",
+]);
 
 function boundedLimit(value, fallback, max) {
   const parsed = Number.parseInt(value, 10);
@@ -888,13 +911,21 @@ export async function attachArtifact({
   label = "",
   idempotencyKey,
 }) {
+  const artifactType = normalizeArtifactType(type);
+  assertCondition(
+    artifactTypes.has(artifactType),
+    "invalid_artifact_type",
+    "Artifact type is not supported.",
+    400,
+    { type, normalizedType: artifactType, allowed: [...artifactTypes] },
+  );
   const stored = await putArtifactObject({ ticketId, filename, mimeType, content });
   return withTransaction(async (client) =>
     withIdempotency(
       client,
       "attach_artifact",
       idempotencyKey,
-      { ticketId, agentId, type, filename, mimeType, label, checksum: stored.checksum },
+      { ticketId, agentId, type: artifactType, filename, mimeType, label, checksum: stored.checksum },
       async () => {
         const row = await getTicketForUpdate(client, ticketId);
         assertActiveLease(row, agentId, leaseToken);
@@ -913,10 +944,10 @@ export async function attachArtifact({
             VALUES ($1, $2, $3, $4, $5)
             RETURNING *
           `,
-          [ticketId, agentId, object.rows[0].id, type, label],
+          [ticketId, agentId, object.rows[0].id, artifactType, label],
         );
 
-        if (type === "screenshot" || type === "computer-use-screenshot" || type === "browser-screenshot") {
+        if (artifactType === "screenshot" || artifactType === "computer-use-screenshot" || artifactType === "browser-screenshot") {
           await client.query(
             `
               UPDATE tickets
@@ -932,7 +963,7 @@ export async function attachArtifact({
         }
 
         await writeEvent(client, ticketId, agentId, "proof.attached", "Proof artifact attached.", {
-          type,
+          type: artifactType,
           filename,
           sizeBytes: stored.sizeBytes,
           checksum: stored.checksum,
@@ -1132,6 +1163,15 @@ export async function rejectProof({ ticketId, actorAgentId = null, reason }) {
 export async function reopenTicket({ ticketId, actorAgentId = null, reason = "" }) {
   return withTransaction(async (client) => {
     await getTicketForUpdate(client, ticketId);
+    await client.query(
+      `
+        UPDATE ticket_file_claims
+        SET released_at = now()
+        WHERE ticket_id = $1
+          AND released_at IS NULL
+      `,
+      [ticketId],
+    );
     const updated = await client.query(
       `
         UPDATE tickets
@@ -1152,15 +1192,57 @@ export async function reopenTicket({ ticketId, actorAgentId = null, reason = "" 
 
 export async function heartbeat({ agentId, ticketId = null, sessionId = null, metadata = {} }) {
   await query("UPDATE agents SET last_seen_at = now() WHERE id = $1", [agentId]);
+  const session = await resolveHeartbeatSession(agentId, sessionId);
   const result = await query(
     `
       INSERT INTO agent_heartbeats(agent_id, session_id, ticket_id, metadata)
       VALUES ($1, $2, $3, $4)
       RETURNING *
     `,
-    [agentId, sessionId, ticketId, JSON.stringify(metadata)],
+    [agentId, session?.id ?? null, ticketId, JSON.stringify(metadata)],
   );
-  return result.rows[0];
+  return { ...result.rows[0], sessionLabel: session?.label ?? "" };
+}
+
+async function resolveHeartbeatSession(agentId, sessionId) {
+  if (!sessionId) return null;
+  if (isUuid(sessionId)) {
+    const result = await query(
+      `
+        INSERT INTO agent_sessions(id, agent_id, label)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (id) DO UPDATE SET
+          agent_id = EXCLUDED.agent_id,
+          label = EXCLUDED.label,
+          ended_at = NULL
+        RETURNING id, label
+      `,
+      [sessionId, agentId, sessionId],
+    );
+    return result.rows[0];
+  }
+  const existing = await query(
+    `
+      SELECT id, label
+      FROM agent_sessions
+      WHERE agent_id = $1
+        AND label = $2
+        AND ended_at IS NULL
+      ORDER BY started_at DESC
+      LIMIT 1
+    `,
+    [agentId, sessionId],
+  );
+  if (existing.rowCount > 0) return existing.rows[0];
+  const created = await query(
+    `
+      INSERT INTO agent_sessions(agent_id, label)
+      VALUES ($1, $2)
+      RETURNING id, label
+    `,
+    [agentId, sessionId],
+  );
+  return created.rows[0];
 }
 
 export async function getTicketEvents(ticketId, { limit = 50, cursor = null, includeData = true, paginated = false } = {}) {

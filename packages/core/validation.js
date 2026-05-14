@@ -22,6 +22,10 @@ export function assertUuid(value, field) {
   return value;
 }
 
+export function isUuid(value) {
+  return typeof value === "string" && uuidPattern.test(value);
+}
+
 export function optionalUuid(value, field) {
   if (value === undefined || value === null || value === "") return null;
   return assertUuid(value, field);
@@ -68,8 +72,14 @@ export function boolParam(value, fallback = false) {
 }
 
 export function normalizeDatabaseError(err) {
+  if (err?.code === "22P02" && /artifact_type/i.test(err.message ?? "")) {
+    return new ObjectiveError("invalid_artifact_type", "Artifact type is not supported.", 400);
+  }
   if (err?.code === "22P02") {
     return new ObjectiveError("invalid_uuid_format", "One or more ID fields must be valid UUIDs.", 400);
+  }
+  if (err?.code === "23503") {
+    return new ObjectiveError("related_record_not_found", "A referenced Objective record was not found.", 409);
   }
   if (err?.code === "55P03") {
     return new ObjectiveError(

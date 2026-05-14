@@ -119,8 +119,8 @@ export async function runSelfTest({ archive = true, retentionMinutes = 60 } = {}
       return {
         ok: result.ok,
         testRunId: result.testRun?.id,
-        artifactId: result.artifact?.artifact?.id,
-        downloadUrl: result.artifact?.downloadUrl,
+        artifactId: result.artifact?.id,
+        downloadUrl: result.downloadUrl,
       };
     }),
   );

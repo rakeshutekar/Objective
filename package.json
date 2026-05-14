@@ -11,7 +11,7 @@
     "dev": "node apps/web/server.js",
     "db:migrate": "node packages/db/migrate.js",
     "db:seed": "node packages/db/seed.js",
-    "test": "node --test tests/*.test.js tests/e2e/*.test.js",
+    "test": "node --test --test-concurrency=1 tests/*.test.js tests/e2e/*.test.js",
     "test:phase1": "node --test tests/phase1.test.js",
     "test:phase2": "node --test tests/phase2.test.js",
     "test:phase3": "node --test tests/phase3.test.js",
@@ -32,6 +32,7 @@
     "test:phase18": "node --test tests/phase18.test.js",
     "test:phase19": "node --test tests/phase19.test.js",
     "test:phase20": "node --test tests/phase20.test.js",
+    "test:phase21": "node --test tests/phase21.test.js",
     "test:e2e": "node --test tests/e2e/*.test.js"
   },
   "dependencies": {

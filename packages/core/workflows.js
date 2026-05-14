@@ -1,6 +1,6 @@
 import { config } from "./config.js";
 import { ObjectiveError } from "./errors.js";
-import { shapeTicketPayload, ticketSummary } from "./responses.js";
+import { artifactSummary, shapeTicketPayload, ticketSummary } from "./responses.js";
 import {
   attachArtifact,
   claimFiles,
@@ -127,8 +127,12 @@ export async function recordTestAndAttachLog({
     return {
       ok: true,
       testRun: test.testRun,
-      ticket: shapeTicketPayload({ ticket: test.ticket }, mode).ticket,
-      artifact,
+      artifact: artifactSummary(artifact.artifact),
+      artifactObject: artifact.object,
+      ticket: shapeTicketPayload({ ticket: artifact.ticket }, mode).ticket,
+      lease: artifact.lease,
+      downloadUrl: artifact.downloadUrl,
+      presignedUrl: artifact.presignedUrl,
     };
   } catch (err) {
     return {
@@ -136,6 +140,7 @@ export async function recordTestAndAttachLog({
       partial: true,
       testRun: test.testRun,
       ticket: shapeTicketPayload({ ticket: test.ticket }, mode).ticket,
+      lease: test.lease,
       error: err.code ?? "artifact_attach_failed",
       message: err.message,
     };

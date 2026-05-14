@@ -416,12 +416,13 @@ The current test suite verifies:
 - artifact URL proof defaults
 - composed workflow tools
 - self-test and archive cleanup
+- artifact aliases, session IDs, flat log attachments, canonical artifact URLs, and reopen file-claim cleanup
 - Codex and Claude plugin wrapper E2E completion
 
 Current local verification:
 
 ```text
-31 tests passing
+32 tests passing
 ```
 
 ## Completion Gate
