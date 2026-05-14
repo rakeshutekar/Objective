@@ -86,6 +86,103 @@ test("self-test runs a disposable workflow and archives created data", async () 
   }
 });
 
+test("archive tools release active leases and file claims", async () => {
+  await migrate();
+  const server = createServer();
+  await new Promise((resolve) => server.listen(0, resolve));
+  const apiBase = `http://127.0.0.1:${server.address().port}`;
+  const unique = `phase20-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+  try {
+    await withMcp({ OBJECTIVE_API_BASE: apiBase }, async (call) => {
+      const agent = parseToolText(await call("objective_create_agent", { name: "Phase 20 Archive Agent", kind: "codex" }));
+      const project = parseToolText(await call("objective_create_project", { name: `Phase 20 Archive ${unique}` }));
+      const projectTicket = parseToolText(
+        await call("objective_create_ticket", {
+          projectId: project.project.id,
+          actorAgentId: agent.agent.id,
+          title: "Archive project claimed ticket",
+          why: "Archive should clean active coordination state",
+          description: "Claimed ticket should not leave active file claims after project archive.",
+          plannedFiles: [`${unique}/project.ts`],
+        }),
+      );
+      await call("objective_claim_ticket_and_files", {
+        ticketId: projectTicket.ticket.id,
+        agentId: agent.agent.id,
+        files: [`${unique}/project.ts`],
+      });
+
+      const archivedProject = parseToolText(
+        await call("objective_archive_project", {
+          projectId: project.project.id,
+          archiveTickets: true,
+          reason: "phase20 archive cleanup",
+        }),
+      );
+      assert.equal(archivedProject.archivedTickets, true);
+      assert.equal(archivedProject.releasedClaims, 1);
+      assert.equal(archivedProject.releasedTickets, 1);
+
+      const projectClaims = parseToolText(
+        await call("objective_get_file_claims", {
+          ticketId: projectTicket.ticket.id,
+          activeOnly: true,
+          includeArchived: true,
+        }),
+      );
+      assert.equal(projectClaims.claims.length, 0);
+      const projectRead = parseToolText(await call("objective_get_ticket", { ticketId: projectTicket.ticket.id }));
+      assert.equal(projectRead.ticket.assignedAgentId, null);
+      assert.equal(projectRead.ticket.leaseToken, null);
+      assert.equal(projectRead.ticket.status, "Ready");
+
+      const ticketProject = parseToolText(await call("objective_create_project", { name: `Phase 20 Ticket ${unique}` }));
+      const singleTicket = parseToolText(
+        await call("objective_create_ticket", {
+          projectId: ticketProject.project.id,
+          actorAgentId: agent.agent.id,
+          title: "Archive ticket claimed ticket",
+          why: "Ticket archive should also clean active coordination state",
+          description: "Claimed ticket should not leave active file claims after ticket archive.",
+          plannedFiles: [`${unique}/ticket.ts`],
+        }),
+      );
+      await call("objective_claim_ticket_and_files", {
+        ticketId: singleTicket.ticket.id,
+        agentId: agent.agent.id,
+        files: [`${unique}/ticket.ts`],
+      });
+      const archivedTicket = parseToolText(
+        await call("objective_archive_ticket", {
+          ticketId: singleTicket.ticket.id,
+          reason: "phase20 ticket archive cleanup",
+        }),
+      );
+      assert.equal(archivedTicket.releasedClaims, 1);
+      assert.equal(archivedTicket.releasedTickets, 1);
+
+      const ticketClaims = parseToolText(
+        await call("objective_get_file_claims", {
+          ticketId: singleTicket.ticket.id,
+          activeOnly: true,
+          includeArchived: true,
+        }),
+      );
+      assert.equal(ticketClaims.claims.length, 0);
+      const work = parseToolText(
+        await call("objective_list_agent_work", {
+          agentId: agent.agent.id,
+          includeArchived: true,
+        }),
+      );
+      assert.equal(work.tickets.length, 0);
+    });
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test.after(async () => {
   await closePool();
 });
