@@ -187,6 +187,8 @@ Core tools:
 
 ```text
 objective_health
+objective_tool_manifest
+objective_agent_bootstrap
 objective_create_agent
 objective_list_projects
 objective_create_project
@@ -209,6 +211,8 @@ objective_claim_files
 objective_release_files
 objective_get_file_claims
 objective_record_test
+objective_claim_ticket_and_files
+objective_record_test_and_attach_log
 ```
 
 Proof and completion tools:
@@ -219,9 +223,14 @@ objective_attach_screenshot
 objective_attach_proof
 objective_validate_ticket_completion
 objective_submit_done
+objective_submit_done_with_artifacts
 objective_mark_blocked
 objective_reject_proof
 objective_reopen_ticket
+objective_archive_project
+objective_archive_ticket
+objective_cleanup_test_runs
+objective_self_test
 ```
 
 Coordination tools:
@@ -230,6 +239,7 @@ Coordination tools:
 objective_get_blockers
 objective_add_dependency
 objective_heartbeat
+objective_keepalive
 objective_list_agent_work
 objective_get_ticket_events
 ```
@@ -328,18 +338,22 @@ cp .env.example .env
 Common variables:
 
 ```text
-DATABASE_URL=postgres://objective:objective@localhost:5432/objective
+OBJECTIVE_DATABASE_URL=postgres://objective:objective@localhost:5432/objective
+OBJECTIVE_DATABASE_POOL_MAX=50
 OBJECTIVE_API_BASE=http://127.0.0.1:3000
 OBJECTIVE_AGENT_API_KEY=dev-agent-key
 OBJECTIVE_ADMIN_API_KEY=dev-admin-key
 OBJECTIVE_API_REQUEST_TIMEOUT_MS=10000
 OBJECTIVE_HEALTH_CHECK_TIMEOUT_MS=1500
+OBJECTIVE_DEFAULT_PAGE_SIZE=25
+OBJECTIVE_MAX_PAGE_SIZE=200
+OBJECTIVE_DEFAULT_LEASE_TTL_SECONDS=900
 OBJECTIVE_MCP_PRETTY=false
-MINIO_ENDPOINT=localhost
-MINIO_PORT=9000
-MINIO_ACCESS_KEY=objective
-MINIO_SECRET_KEY=objective-secret
-MINIO_BUCKET=objective-artifacts
+OBJECTIVE_STORAGE_ENDPOINT=localhost
+OBJECTIVE_STORAGE_PORT=9000
+OBJECTIVE_STORAGE_ACCESS_KEY=objective
+OBJECTIVE_STORAGE_SECRET_KEY=objective-secret
+OBJECTIVE_STORAGE_BUCKET=objective-artifacts
 ```
 
 ## Development
@@ -395,12 +409,17 @@ The current test suite verifies:
 - 1000 local agent heartbeats
 - full MCP completion workflow
 - bounded MCP project and event responses
+- validation and actionable agent errors
+- bootstrap and manifest tools
+- artifact URL proof defaults
+- composed workflow tools
+- self-test and archive cleanup
 - Codex and Claude plugin wrapper E2E completion
 
 Current local verification:
 
 ```text
-22 tests passing
+29 tests passing
 ```
 
 ## Completion Gate
@@ -424,10 +443,11 @@ If any requirement is missing, Objective moves the ticket to `Verification Faile
 Objective keeps agent tool calls bounded and compact by default:
 
 - MCP responses use compact JSON unless `OBJECTIVE_MCP_PRETTY=true`.
-- `objective_list_projects` returns 25 compact project summaries by default and accepts `limit` plus `q` for search.
+- List tools return compact bounded pages by default and accept `limit`, `cursor`, `q`, `createdAfter`, and `includeArchived`.
 - Agent API requests time out after `OBJECTIVE_API_REQUEST_TIMEOUT_MS`.
 - Health checks run database and storage checks in parallel with `OBJECTIVE_HEALTH_CHECK_TIMEOUT_MS`.
 - `objective_get_ticket_events` returns the latest 25 compact events by default; pass `includeData: true` for full event data.
+- `objective_agent_bootstrap` and composed workflow tools should be preferred over manual primitive-call stitching.
 
 These defaults reduce tool latency and token usage while keeping the full structured payload available to agents.
 

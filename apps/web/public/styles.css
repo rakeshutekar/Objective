@@ -59,6 +59,11 @@ textarea {
   padding: 8px 10px;
 }
 
+input[type="checkbox"] {
+  width: auto;
+  min-height: 0;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr) 340px;
@@ -136,9 +141,18 @@ textarea {
 
 .project-list,
 .ticket-list,
-.lock-list {
+.lock-list,
+.status-list {
   display: grid;
   gap: 10px;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  margin: 8px 0 12px;
 }
 
 .project-button,
@@ -224,7 +238,7 @@ h2 {
 
 .metric-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 18px;
 }
@@ -397,6 +411,10 @@ dd {
   }
 
   .board {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .metric-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }

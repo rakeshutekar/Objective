@@ -7,6 +7,8 @@ const state = {
   tickets: [],
   claims: [],
   selectedTicketId: null,
+  includeArchived: false,
+  manifest: null,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -49,16 +51,24 @@ async function load() {
   healthPill.textContent = health.ok ? "Local services online" : "Service issue";
   healthPill.className = `health ${health.ok ? "ok" : "error"}`;
 
-  const projects = await api("/api/projects");
+  const projects = await api(`/api/projects?includeArchived=${state.includeArchived}`);
   state.projects = projects.projects;
+  if (state.selectedProjectId && !state.projects.some((project) => project.id === state.selectedProjectId)) {
+    state.selectedProjectId = null;
+  }
   if (!state.selectedProjectId && state.projects[0]) state.selectedProjectId = state.projects[0].id;
 
   if (state.selectedProjectId) {
-    const tickets = await api(`/api/projects/${state.selectedProjectId}/tickets`);
-    const claims = await api(`/api/file-claims?projectId=${state.selectedProjectId}`);
+    const tickets = await api(`/api/projects/${state.selectedProjectId}/tickets?includeArchived=${state.includeArchived}`);
+    const claims = await api(`/api/file-claims?projectId=${state.selectedProjectId}&includeArchived=${state.includeArchived}`);
     state.tickets = tickets.tickets;
     state.claims = claims.claims;
+  } else {
+    state.tickets = [];
+    state.claims = [];
   }
+
+  state.manifest = await api("/api/tool-manifest").catch(() => null);
 
   render();
 }
@@ -69,6 +79,7 @@ function render() {
   renderDashboard();
   renderBoard();
   renderLocks();
+  renderRuntime();
   if (state.selectedTicketId) renderDetail(state.selectedTicketId);
 }
 
@@ -79,6 +90,10 @@ function renderProjects() {
         <button class="project-button ${project.id === state.selectedProjectId ? "active" : ""}" data-project-id="${project.id}">
           <strong>${escapeHtml(project.name)}</strong>
           <span class="muted">${escapeHtml(project.description || "No description")}</span>
+          <span class="ticket-meta">
+            ${project.isTest ? '<span class="badge">test</span>' : ""}
+            ${project.archivedAt ? '<span class="badge blocked">archived</span>' : ""}
+          </span>
         </button>
       `,
     )
@@ -94,6 +109,8 @@ function renderMetrics() {
     ["Blocked", counts.Blocked],
     ["Proof", counts["Proof Submitted"]],
     ["Done", counts.Done],
+    ["Leases", state.claims.length],
+    ["Test", state.tickets.filter((ticket) => ticket.isTest).length],
   ]
     .map(([label, value]) => `<div class="metric"><strong>${value}</strong><span>${label}</span></div>`)
     .join("");
@@ -135,6 +152,8 @@ function renderBoard() {
                   <div class="ticket-meta">
                     <span class="badge">${ticket.plannedFiles?.length || 0} planned</span>
                     <span class="badge">${ticket.testsPerformed?.length || 0} tests</span>
+                    ${ticket.isTest ? '<span class="badge">test</span>' : ""}
+                    ${ticket.archivedAt ? '<span class="badge blocked">archived</span>' : ""}
                   </div>
                 </article>
               `,
@@ -176,6 +195,8 @@ async function renderDetail(ticketId) {
     <div class="ticket-meta">
       <span class="badge ${ticket.status === "Done" ? "done" : ""}">${escapeHtml(ticket.status)}</span>
       <span class="badge">lease ${ticket.leaseExpiresAt ? new Date(ticket.leaseExpiresAt).toLocaleTimeString() : "none"}</span>
+      ${ticket.isTest ? '<span class="badge">test</span>' : ""}
+      ${ticket.archivedAt ? '<span class="badge blocked">archived</span>' : ""}
     </div>
     <div class="detail-section">
       <h3>Why</h3>
@@ -201,7 +222,7 @@ async function renderDetail(ticketId) {
       <p>${ticket.proofUrl ? `<a href="${escapeHtml(ticket.proofUrl)}" target="_blank">${escapeHtml(ticket.proofUrl)}</a>` : '<span class="muted">No proof URL</span>'}</p>
       ${
         artifacts.length
-          ? artifacts.map((artifact) => `<p><strong>${escapeHtml(artifact.type)}</strong><br><span class="muted">${escapeHtml(artifact.filename)} · ${artifact.size_bytes} bytes</span></p>`).join("")
+          ? artifacts.map((artifact) => `<p><strong>${escapeHtml(artifact.type)}</strong><br><a href="${escapeHtml(artifact.downloadUrl)}" target="_blank">${escapeHtml(artifact.filename)}</a><br><span class="muted">${artifact.size_bytes} bytes</span></p>`).join("")
           : '<p class="muted">No artifacts.</p>'
       }
     </div>
@@ -214,6 +235,15 @@ async function renderDetail(ticketId) {
       ${events.events.map((event) => `<div class="event"><strong>${escapeHtml(event.event_type)}</strong><br>${escapeHtml(event.message)}</div>`).join("")}
     </div>
   `;
+}
+
+function renderRuntime() {
+  const manifest = state.manifest;
+  if (!manifest) {
+    $("#runtime-status").textContent = "Runtime metadata unavailable.";
+    return;
+  }
+  $("#runtime-status").textContent = `API ${manifest.apiVersion} · schema ${manifest.schemaVersion} · lease ${manifest.defaults.leaseTtlSeconds}s`;
 }
 
 document.addEventListener("click", async (event) => {
@@ -234,6 +264,33 @@ document.addEventListener("click", async (event) => {
 });
 
 $("#refresh-button").addEventListener("click", load);
+
+$("#include-archived-toggle").addEventListener("change", async (event) => {
+  state.includeArchived = event.currentTarget.checked;
+  await load();
+});
+
+$("#self-test-button").addEventListener("click", async () => {
+  const target = $("#self-test-result");
+  target.innerHTML = '<p class="muted">Running...</p>';
+  try {
+    const result = await api("/api/self-test", {
+      method: "POST",
+      body: JSON.stringify({ archive: true, retentionMinutes: 60 }),
+    });
+    target.innerHTML = `
+      <div class="check ${result.ok ? "ok" : ""}">
+        <span>Self-test</span><strong>${result.ok ? "passed" : "failed"}</strong>
+      </div>
+      ${result.steps
+        .map((step) => `<div class="event"><strong>${escapeHtml(step.name)}</strong><br>${escapeHtml(step.status)} · ${step.latencyMs}ms</div>`)
+        .join("")}
+    `;
+    await load();
+  } catch (err) {
+    target.innerHTML = `<p class="muted">${escapeHtml(err.message)}</p>`;
+  }
+});
 
 $("#project-form").addEventListener("submit", async (event) => {
   event.preventDefault();

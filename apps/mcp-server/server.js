@@ -26,7 +26,7 @@ async function handle(request) {
     result(request.id, {
       protocolVersion: "2024-11-05",
       capabilities: { tools: {} },
-      serverInfo: { name: "objective", version: "0.1.3" },
+      serverInfo: { name: "objective", version: "0.2.0" },
     });
     return;
   }
@@ -60,7 +60,7 @@ async function handle(request) {
                 {
                   error: err.payload?.error ?? err.code ?? "objective_tool_error",
                   message: err.payload?.message ?? err.message,
-                  details: err.payload?.details,
+                  details: err.payload?.details ?? err.details,
                 },
                 null,
                 prettyResponses ? 2 : 0,

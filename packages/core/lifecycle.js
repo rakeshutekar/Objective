@@ -2,7 +2,9 @@ import crypto from "node:crypto";
 import { config } from "./config.js";
 import { assertCondition, ObjectiveError } from "./errors.js";
 import { withIdempotency } from "./idempotency.js";
+import { appendCursorFilter, cursorFromRow, pageLimit, pageResult } from "./pagination.js";
 import { normalizePathPattern, patternsOverlap } from "./path-locks.js";
+import { parseIsoDate } from "./validation.js";
 import { query, withTransaction } from "../db/client.js";
 import { putArtifactObject, presignedArtifactUrl } from "../storage/minio.js";
 
@@ -16,6 +18,23 @@ const mutableClaimedStatuses = new Set([
 
 function leaseExpiry(ttlSeconds = config.leaseTtlSeconds) {
   return new Date(Date.now() + ttlSeconds * 1000);
+}
+
+function leaseRenewAt(expiresAt) {
+  if (!expiresAt) return null;
+  const expiry = new Date(expiresAt);
+  const renewOffsetSeconds = Math.max(30, Math.floor(config.leaseTtlSeconds / 3));
+  return new Date(expiry.getTime() - renewOffsetSeconds * 1000).toISOString();
+}
+
+function leasePayload(ticket, leaseToken = ticket?.leaseToken) {
+  if (!ticket) return null;
+  return {
+    leaseToken,
+    leaseExpiresAt: ticket.leaseExpiresAt,
+    leaseTtlSeconds: config.leaseTtlSeconds,
+    renewAt: leaseRenewAt(ticket.leaseExpiresAt),
+  };
 }
 
 function token() {
@@ -42,6 +61,10 @@ function normalizeTicket(row) {
     assignedAgentId: row.assigned_agent_id,
     leaseToken: row.lease_token,
     leaseExpiresAt: row.lease_expires_at,
+    archivedAt: row.archived_at,
+    archivedReason: row.archived_reason,
+    isTest: row.is_test,
+    retentionExpiresAt: row.retention_expires_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     doneAt: row.done_at,
@@ -53,9 +76,17 @@ function normalizeProject(row) {
     id: row.id,
     name: row.name,
     description: row.description,
+    archivedAt: row.archived_at,
+    archivedReason: row.archived_reason,
+    isTest: row.is_test,
+    retentionExpiresAt: row.retention_expires_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function artifactDownloadUrl(artifactId) {
+  return `${config.apiBase}/api/artifacts/${artifactId}/download`;
 }
 
 function boundedLimit(value, fallback, max) {
@@ -94,34 +125,96 @@ function assertActiveLease(row, agentId, leaseToken) {
   );
 }
 
-export async function createAgent({ name, kind = "unknown" }) {
-  const result = await query(
-    "INSERT INTO agents(name, kind) VALUES ($1, $2) RETURNING *",
-    [name, kind],
+async function extendActiveLease(client, ticketId, agentId, leaseToken) {
+  const expiresAt = leaseExpiry();
+  const updated = await client.query(
+    `
+      UPDATE tickets
+      SET lease_expires_at = $4
+      WHERE id = $1
+        AND assigned_agent_id = $2
+        AND lease_token = $3
+      RETURNING *
+    `,
+    [ticketId, agentId, leaseToken, expiresAt],
   );
+  await client.query(
+    `
+      UPDATE ticket_file_claims
+      SET expires_at = $4
+      WHERE ticket_id = $1
+        AND agent_id = $2
+        AND lease_token = $3
+        AND released_at IS NULL
+    `,
+    [ticketId, agentId, leaseToken, expiresAt],
+  );
+  return updated.rows[0];
+}
+
+export async function createAgent({ name, kind = "unknown", externalKey = null, metadata = {} }) {
+  const result = externalKey
+    ? await query(
+        `
+          INSERT INTO agents(name, kind, external_key, metadata)
+          VALUES ($1, $2, $3, $4)
+          ON CONFLICT (external_key)
+          WHERE external_key IS NOT NULL
+          DO UPDATE SET
+            name = EXCLUDED.name,
+            kind = EXCLUDED.kind,
+            metadata = agents.metadata || EXCLUDED.metadata
+          RETURNING *
+        `,
+        [name, kind, externalKey, JSON.stringify(metadata)],
+      )
+    : await query(
+        "INSERT INTO agents(name, kind, metadata) VALUES ($1, $2, $3) RETURNING *",
+        [name, kind, JSON.stringify(metadata)],
+      );
   return result.rows[0];
 }
 
-export async function createProject({ name, description = "" }) {
+export async function createProject({ name, description = "", isTest = false, retentionExpiresAt = null }) {
   const result = await query(
-    "INSERT INTO projects(name, description) VALUES ($1, $2) RETURNING *",
-    [name, description],
+    `
+      INSERT INTO projects(name, description, is_test, retention_expires_at)
+      VALUES ($1, $2, $3, $4)
+      RETURNING *
+    `,
+    [name, description, isTest, retentionExpiresAt],
   );
   return normalizeProject(result.rows[0]);
 }
 
-export async function listProjects({ q = "", limit = null } = {}) {
+export async function listProjects({
+  q = "",
+  limit = null,
+  cursor = null,
+  createdAfter = null,
+  includeArchived = false,
+  paginated = false,
+} = {}) {
   const params = [];
   const where = [];
+  if (!includeArchived) {
+    where.push("archived_at IS NULL");
+  }
   if (q) {
     params.push(`%${q}%`);
     where.push(`(name ILIKE $${params.length} OR description ILIKE $${params.length})`);
   }
+  const after = parseIsoDate(createdAfter, "createdAfter");
+  if (after) {
+    params.push(after);
+    where.push(`created_at >= $${params.length}`);
+  }
+  appendCursorFilter({ where, params, cursor });
 
-  const safeLimit = boundedLimit(limit, null, 200);
+  const safeLimit = paginated ? pageLimit(limit) : boundedLimit(limit, null, 200);
   let limitClause = "";
   if (safeLimit) {
-    params.push(safeLimit);
+    params.push(paginated ? safeLimit + 1 : safeLimit);
     limitClause = `LIMIT $${params.length}`;
   }
 
@@ -135,17 +228,31 @@ export async function listProjects({ q = "", limit = null } = {}) {
     `,
     params,
   );
+  if (paginated) {
+    return pageResult(result.rows, safeLimit, normalizeProject);
+  }
   return result.rows.map(normalizeProject);
 }
 
-export async function countProjects({ q = "" } = {}) {
+export async function countProjects({ q = "", createdAfter = null, includeArchived = false } = {}) {
   const params = [];
-  let where = "";
+  const where = [];
+  if (!includeArchived) {
+    where.push("archived_at IS NULL");
+  }
   if (q) {
     params.push(`%${q}%`);
-    where = `WHERE name ILIKE $1 OR description ILIKE $1`;
+    where.push(`(name ILIKE $${params.length} OR description ILIKE $${params.length})`);
   }
-  const result = await query(`SELECT count(*)::int AS count FROM projects ${where}`, params);
+  const after = parseIsoDate(createdAfter, "createdAfter");
+  if (after) {
+    params.push(after);
+    where.push(`created_at >= $${params.length}`);
+  }
+  const result = await query(
+    `SELECT count(*)::int AS count FROM projects ${where.length ? `WHERE ${where.join(" AND ")}` : ""}`,
+    params,
+  );
   return result.rows[0].count;
 }
 
@@ -168,9 +275,11 @@ export async function createTicket(input) {
             status,
             planned_files,
             test_plan,
-            computer_use_required
+            computer_use_required,
+            is_test,
+            retention_expires_at
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
           RETURNING *
         `,
         [
@@ -182,6 +291,8 @@ export async function createTicket(input) {
           input.plannedFiles ?? [],
           input.testPlan ?? "",
           input.computerUseRequired ?? false,
+          input.isTest ?? false,
+          input.retentionExpiresAt ?? null,
         ],
       );
       const ticket = normalizeTicket(result.rows[0]);
@@ -199,17 +310,66 @@ export async function getTicket(ticketId) {
   return normalizeTicket(result.rows[0]);
 }
 
-export async function listProjectTickets(projectId) {
+export async function listProjectTickets(projectId, {
+  limit = null,
+  cursor = null,
+  q = "",
+  createdAfter = null,
+  includeArchived = false,
+  paginated = false,
+} = {}) {
+  const params = [projectId];
+  const where = ["project_id = $1"];
+  if (!includeArchived) {
+    where.push("archived_at IS NULL");
+  }
+  if (q) {
+    params.push(`%${q}%`);
+    where.push(`(title ILIKE $${params.length} OR why ILIKE $${params.length} OR description ILIKE $${params.length})`);
+  }
+  const after = parseIsoDate(createdAfter, "createdAfter");
+  if (after) {
+    params.push(after);
+    where.push(`created_at >= $${params.length}`);
+  }
+  appendCursorFilter({ where, params, cursor });
+  const safeLimit = paginated ? pageLimit(limit) : boundedLimit(limit, null, 200);
+  let limitClause = "";
+  if (safeLimit) {
+    params.push(paginated ? safeLimit + 1 : safeLimit);
+    limitClause = `LIMIT $${params.length}`;
+  }
   const result = await query(
-    "SELECT * FROM tickets WHERE project_id = $1 ORDER BY created_at DESC",
-    [projectId],
+    `
+      SELECT *
+      FROM tickets
+      WHERE ${where.join(" AND ")}
+      ORDER BY updated_at DESC, id DESC
+      ${limitClause}
+    `,
+    params,
   );
+  if (paginated) {
+    return pageResult(result.rows, safeLimit, normalizeTicket);
+  }
   return result.rows.map(normalizeTicket);
 }
 
-export async function searchTickets({ projectId = null, q = "", status = null } = {}) {
+export async function searchTickets({
+  projectId = null,
+  q = "",
+  status = null,
+  limit = null,
+  cursor = null,
+  createdAfter = null,
+  includeArchived = false,
+  paginated = false,
+} = {}) {
   const params = [];
   const where = [];
+  if (!includeArchived) {
+    where.push("archived_at IS NULL");
+  }
   if (projectId) {
     params.push(projectId);
     where.push(`project_id = $${params.length}`);
@@ -222,50 +382,114 @@ export async function searchTickets({ projectId = null, q = "", status = null } 
     params.push(`%${q}%`);
     where.push(`(title ILIKE $${params.length} OR why ILIKE $${params.length} OR description ILIKE $${params.length})`);
   }
+  const after = parseIsoDate(createdAfter, "createdAfter");
+  if (after) {
+    params.push(after);
+    where.push(`created_at >= $${params.length}`);
+  }
+  appendCursorFilter({ where, params, cursor });
+  const safeLimit = paginated ? pageLimit(limit) : boundedLimit(limit, 100, 200);
+  params.push(paginated ? safeLimit + 1 : safeLimit);
+  const limitIndex = params.length;
   const result = await query(
     `
       SELECT *
       FROM tickets
       ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-      ORDER BY created_at DESC
-      LIMIT 100
+      ORDER BY updated_at DESC, id DESC
+      LIMIT $${limitIndex}
     `,
     params,
   );
+  if (paginated) {
+    return pageResult(result.rows, safeLimit, normalizeTicket);
+  }
   return result.rows.map(normalizeTicket);
 }
 
-export async function listAgentWork(agentId) {
+export async function listAgentWork(agentId, {
+  limit = null,
+  cursor = null,
+  includeArchived = false,
+  paginated = false,
+} = {}) {
+  const params = [agentId];
+  const where = [
+    "assigned_agent_id = $1",
+    "status NOT IN ('Done', 'Canceled')",
+  ];
+  if (!includeArchived) {
+    where.push("archived_at IS NULL");
+  }
+  appendCursorFilter({ where, params, cursor });
+  const safeLimit = paginated ? pageLimit(limit) : boundedLimit(limit, null, 200);
+  let limitClause = "";
+  if (safeLimit) {
+    params.push(paginated ? safeLimit + 1 : safeLimit);
+    limitClause = `LIMIT $${params.length}`;
+  }
   const result = await query(
     `
       SELECT *
       FROM tickets
-      WHERE assigned_agent_id = $1
-        AND status NOT IN ('Done', 'Canceled')
-      ORDER BY updated_at DESC
+      WHERE ${where.join(" AND ")}
+      ORDER BY updated_at DESC, id DESC
+      ${limitClause}
     `,
-    [agentId],
+    params,
   );
+  if (paginated) {
+    return pageResult(result.rows, safeLimit, normalizeTicket);
+  }
   return result.rows.map(normalizeTicket);
 }
 
-export async function getAvailableTickets(projectId) {
+export async function getAvailableTickets(projectId, {
+  limit = null,
+  cursor = null,
+  createdAfter = null,
+  includeArchived = false,
+  paginated = false,
+} = {}) {
+  const params = [projectId];
+  const where = [
+    "t.project_id = $1",
+    "t.status IN ('Ready', 'Reopened', 'Verification Failed')",
+  ];
+  if (!includeArchived) {
+    where.push("t.archived_at IS NULL");
+  }
+  const after = parseIsoDate(createdAfter, "createdAfter");
+  if (after) {
+    params.push(after);
+    where.push(`t.created_at >= $${params.length}`);
+  }
+  appendCursorFilter({ where, params, cursor, tableAlias: "t" });
+  const safeLimit = paginated ? pageLimit(limit) : boundedLimit(limit, null, 200);
+  let limitClause = "";
+  if (safeLimit) {
+    params.push(paginated ? safeLimit + 1 : safeLimit);
+    limitClause = `LIMIT $${params.length}`;
+  }
   const result = await query(
     `
       SELECT t.*
       FROM tickets t
-      WHERE t.project_id = $1
-        AND t.status IN ('Ready', 'Reopened', 'Verification Failed')
+      WHERE ${where.join(" AND ")}
         AND NOT EXISTS (
           SELECT 1
           FROM ticket_dependencies d
           JOIN tickets dep ON dep.id = d.depends_on_ticket_id
           WHERE d.ticket_id = t.id AND dep.status <> 'Done'
         )
-      ORDER BY t.created_at ASC
+      ORDER BY t.updated_at DESC, t.id DESC
+      ${limitClause}
     `,
-    [projectId],
+    params,
   );
+  if (paginated) {
+    return pageResult(result.rows, safeLimit, normalizeTicket);
+  }
   return result.rows.map(normalizeTicket);
 }
 
@@ -336,7 +560,8 @@ export async function claimTicket({ ticketId, agentId, idempotencyKey }) {
       await writeEvent(client, ticketId, agentId, "ticket.claimed", "Ticket claimed.", {
         leaseExpiresAt: expiresAt,
       });
-      return { ticket: normalizeTicket(updated.rows[0]), leaseToken };
+      const ticket = normalizeTicket(updated.rows[0]);
+      return { ticket, ...leasePayload(ticket, leaseToken) };
     }),
   );
 }
@@ -353,7 +578,8 @@ export async function renewTicketLease({ ticketId, agentId, leaseToken }) {
     await writeEvent(client, ticketId, agentId, "ticket.lease_renewed", "Ticket lease renewed.", {
       leaseExpiresAt: expiresAt,
     });
-    return { ticket: normalizeTicket(updated.rows[0]) };
+    const ticket = normalizeTicket(updated.rows[0]);
+    return { ticket, ...leasePayload(ticket, leaseToken) };
   });
 }
 
@@ -430,6 +656,7 @@ export async function claimFiles({ ticketId, agentId, leaseToken, files, idempot
         conflicts,
       });
 
+      const renewedRow = await extendActiveLease(client, ticketId, agentId, leaseToken);
       const claims = [];
       for (const item of normalized) {
         const inserted = await client.query(
@@ -445,7 +672,7 @@ export async function claimFiles({ ticketId, agentId, leaseToken, files, idempot
             VALUES ($1, $2, $3, $3, $4, $5)
             RETURNING *
           `,
-          [ticketId, agentId, item, leaseToken, row.lease_expires_at],
+          [ticketId, agentId, item, leaseToken, renewedRow.lease_expires_at],
         );
         claims.push(inserted.rows[0]);
       }
@@ -453,7 +680,8 @@ export async function claimFiles({ ticketId, agentId, leaseToken, files, idempot
       await writeEvent(client, ticketId, agentId, "files.claimed", "Files claimed.", {
         files: normalized,
       });
-      return { claims };
+      const ticket = normalizeTicket(renewedRow);
+      return { claims, lease: leasePayload(ticket, leaseToken) };
     }),
   );
 }
@@ -484,11 +712,20 @@ export async function releaseFiles({ ticketId, agentId, leaseToken, files = [] }
     await writeEvent(client, ticketId, agentId, "files.released", "Files released.", {
       files: normalized.length > 0 ? normalized : "all",
     });
-    return { released: result.rows };
+    const renewed = await extendActiveLease(client, ticketId, agentId, leaseToken);
+    return { released: result.rows, lease: leasePayload(normalizeTicket(renewed), leaseToken) };
   });
 }
 
-export async function getFileClaims({ projectId = null, ticketId = null, activeOnly = true } = {}) {
+export async function getFileClaims({
+  projectId = null,
+  ticketId = null,
+  activeOnly = true,
+  limit = null,
+  cursor = null,
+  includeArchived = false,
+  paginated = false,
+} = {}) {
   const params = [];
   const where = [];
   if (projectId) {
@@ -504,6 +741,17 @@ export async function getFileClaims({ projectId = null, ticketId = null, activeO
     where.push("c.expires_at > now()");
     where.push("t.status NOT IN ('Done', 'Canceled')");
   }
+  if (!includeArchived) {
+    where.push("t.archived_at IS NULL");
+    where.push("p.archived_at IS NULL");
+  }
+  appendCursorFilter({ where, params, cursor, column: "created_at", tableAlias: "c" });
+  const safeLimit = paginated ? pageLimit(limit) : boundedLimit(limit, null, 200);
+  let limitClause = "";
+  if (safeLimit) {
+    params.push(paginated ? safeLimit + 1 : safeLimit);
+    limitClause = `LIMIT $${params.length}`;
+  }
 
   const result = await query(
     `
@@ -512,10 +760,14 @@ export async function getFileClaims({ projectId = null, ticketId = null, activeO
       JOIN tickets t ON t.id = c.ticket_id
       JOIN projects p ON p.id = t.project_id
       ${where.length > 0 ? `WHERE ${where.join(" AND ")}` : ""}
-      ORDER BY c.created_at DESC
+      ORDER BY c.created_at DESC, c.id DESC
+      ${limitClause}
     `,
     params,
   );
+  if (paginated) {
+    return pageResult(result.rows, safeLimit, (row) => row, "created_at");
+  }
   return result.rows;
 }
 
@@ -567,7 +819,8 @@ export async function updateTicket({ ticketId, agentId, leaseToken, patch, idemp
         ],
       );
       await writeEvent(client, ticketId, agentId, "ticket.updated", "Ticket updated.", patch);
-      return { ticket: normalizeTicket(updated.rows[0]) };
+      const renewed = await extendActiveLease(client, ticketId, agentId, leaseToken);
+      return { ticket: normalizeTicket(renewed), lease: leasePayload(normalizeTicket(renewed), leaseToken) };
     }),
   );
 }
@@ -605,7 +858,8 @@ export async function recordTest({ ticketId, agentId, leaseToken, command, statu
           command,
           status,
         });
-        return { testRun: testRun.rows[0], ticket: normalizeTicket(updated.rows[0]) };
+        const renewed = await extendActiveLease(client, ticketId, agentId, leaseToken);
+        return { testRun: testRun.rows[0], ticket: normalizeTicket(renewed), lease: leasePayload(normalizeTicket(renewed), leaseToken) };
       },
     ),
   );
@@ -672,9 +926,18 @@ export async function attachArtifact({
           checksum: stored.checksum,
         });
 
+        const renewed = await extendActiveLease(client, ticketId, agentId, leaseToken);
         return {
-          artifact: artifact.rows[0],
+          artifact: {
+            ...artifact.rows[0],
+            downloadUrl: artifactDownloadUrl(artifact.rows[0].id),
+            presignedUrl: await presignedArtifactUrl(stored.objectKey),
+          },
           object: object.rows[0],
+          ticket: normalizeTicket(renewed),
+          lease: leasePayload(normalizeTicket(renewed), leaseToken),
+          downloadUrl: artifactDownloadUrl(artifact.rows[0].id),
+          presignedUrl: await presignedArtifactUrl(stored.objectKey),
         };
       },
     ),
@@ -698,11 +961,39 @@ export async function listProofArtifacts(ticketId) {
     `,
     [ticketId],
   );
-  return result.rows;
+  return result.rows.map((row) => ({
+    ...row,
+    downloadUrl: artifactDownloadUrl(row.id),
+  }));
 }
 
 export async function getArtifactUrl(objectKey) {
   return presignedArtifactUrl(objectKey);
+}
+
+export async function getArtifactById(artifactId) {
+  const result = await query(
+    `
+      SELECT
+        pa.*,
+        ao.object_key,
+        ao.filename,
+        ao.mime_type,
+        ao.size_bytes,
+        ao.checksum
+      FROM proof_artifacts pa
+      JOIN artifact_objects ao ON ao.id = pa.artifact_object_id
+      WHERE pa.id = $1
+    `,
+    [artifactId],
+  );
+  assertCondition(result.rowCount === 1, "artifact_not_found", "Artifact not found.", 404);
+  const artifact = result.rows[0];
+  return {
+    ...artifact,
+    downloadUrl: artifactDownloadUrl(artifact.id),
+    presignedUrl: await presignedArtifactUrl(artifact.object_key),
+  };
 }
 
 export async function validateTicketCompletion(ticketId) {
@@ -808,7 +1099,8 @@ export async function markBlocked({ ticketId, agentId, leaseToken, reason }) {
       [ticketId],
     );
     await writeEvent(client, ticketId, agentId, "ticket.blocked", reason || "Ticket blocked.");
-    return { ticket: normalizeTicket(updated.rows[0]) };
+    const renewed = await extendActiveLease(client, ticketId, agentId, leaseToken);
+    return { ticket: normalizeTicket(renewed), lease: leasePayload(normalizeTicket(renewed), leaseToken) };
   });
 }
 
@@ -859,24 +1151,33 @@ export async function heartbeat({ agentId, ticketId = null, sessionId = null, me
   return result.rows[0];
 }
 
-export async function getTicketEvents(ticketId, { limit = 50, includeData = true } = {}) {
-  const safeLimit = boundedLimit(limit, 50, 200);
+export async function getTicketEvents(ticketId, { limit = 50, cursor = null, includeData = true, paginated = false } = {}) {
+  const safeLimit = paginated ? pageLimit(limit, 50) : boundedLimit(limit, 50, 200);
+  const params = [ticketId];
+  const where = ["ticket_id = $1"];
+  appendCursorFilter({ where, params, cursor, column: "created_at" });
+  params.push(paginated ? safeLimit + 1 : safeLimit);
+  const limitIndex = params.length;
   const result = await query(
     `
       SELECT *
-      FROM (
-        SELECT *
-        FROM ticket_events
-        WHERE ticket_id = $1
-        ORDER BY created_at DESC
-        LIMIT $2
-      ) latest_events
-      ORDER BY created_at ASC
+      FROM ticket_events
+      WHERE ${where.join(" AND ")}
+      ORDER BY created_at DESC, id DESC
+      LIMIT $${limitIndex}
     `,
-    [ticketId, safeLimit],
+    params,
   );
-  if (includeData) {
-    return result.rows;
+  const visibleDesc = result.rows.slice(0, safeLimit);
+  const output = visibleDesc.slice().reverse();
+  const rows = includeData ? output : output.map(({ data, ...row }) => row);
+  if (paginated) {
+    return {
+      items: rows,
+      count: rows.length,
+      hasMore: result.rows.length > safeLimit,
+      nextCursor: result.rows.length > safeLimit ? cursorFromRow(visibleDesc.at(-1), "created_at") : null,
+    };
   }
-  return result.rows.map(({ data, ...row }) => row);
+  return rows;
 }

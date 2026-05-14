@@ -1,6 +1,6 @@
 {
   "name": "objective",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Local AI-agent ticketing system for Codex and Claude.",
@@ -25,6 +25,13 @@
     "test:phase11": "node --test tests/phase11.test.js",
     "test:phase12": "node --test tests/phase12.test.js",
     "test:phase13": "node --test tests/phase13.test.js",
+    "test:phase14": "node --test tests/phase14.test.js",
+    "test:phase15": "node --test tests/phase15.test.js",
+    "test:phase16": "node --test tests/phase16.test.js",
+    "test:phase17": "node --test tests/phase17.test.js",
+    "test:phase18": "node --test tests/phase18.test.js",
+    "test:phase19": "node --test tests/phase19.test.js",
+    "test:phase20": "node --test tests/phase20.test.js",
     "test:e2e": "node --test tests/e2e/*.test.js"
   },
   "dependencies": {

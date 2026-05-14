@@ -27,9 +27,11 @@ test("Codex and Claude plugin manifests expose Objective", async () => {
 test("plugin skills define the same Objective workflow", async () => {
   const codexSkill = await readFile("plugins/codex/skills/objective/SKILL.md", "utf8");
   const claudeSkill = await readFile("plugins/claude/skills/objective/SKILL.md", "utf8");
-  assert.ok(codexSkill.includes("objective_claim_files"));
+  assert.ok(codexSkill.includes("objective_agent_bootstrap"));
+  assert.ok(codexSkill.includes("objective_claim_ticket_and_files"));
   assert.ok(codexSkill.includes("Completion Gate"));
-  assert.ok(claudeSkill.includes("objective_claim_files"));
+  assert.ok(claudeSkill.includes("objective_agent_bootstrap"));
+  assert.ok(claudeSkill.includes("objective_claim_ticket_and_files"));
   assert.ok(claudeSkill.includes("Completion Gate"));
 });
 

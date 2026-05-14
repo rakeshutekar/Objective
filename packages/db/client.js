@@ -9,7 +9,7 @@ export function getPool() {
   if (!pool) {
     pool = new Pool({
       connectionString: config.databaseUrl,
-      max: 20,
+      max: config.databasePoolMax,
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 5_000,
     });

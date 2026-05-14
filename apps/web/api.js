@@ -1,7 +1,10 @@
 import crypto from "node:crypto";
 import { ObjectiveError } from "../../packages/core/errors.js";
 import { config } from "../../packages/core/config.js";
+import { toolManifest } from "../../packages/core/manifest.js";
+import { runSelfTest } from "../../packages/core/self-test.js";
 import { withTimeout } from "../../packages/core/timeout.js";
+import { assertEnum, assertUuid, boolParam, normalizeDatabaseError, optionalUuid } from "../../packages/core/validation.js";
 import {
   addTicketDependency,
   attachArtifact,
@@ -11,6 +14,7 @@ import {
   createAgent,
   createProject,
   createTicket,
+  getArtifactById,
   getArtifactUrl,
   getAvailableTickets,
   getBlockers,
@@ -179,18 +183,40 @@ async function route(req, res) {
     return true;
   }
 
+  if (method === "GET" && path === "/api/tool-manifest") {
+    const pluginKind = assertEnum(
+      url.searchParams.get("pluginKind") ?? "codex",
+      "plugin_kind",
+      ["codex", "claude"],
+    );
+    sendJson(res, 200, toolManifest({ tools: [], pluginKind }));
+    return true;
+  }
+
+  if (method === "POST" && path === "/api/self-test") {
+    await requireAuth(req);
+    const input = await bodyJson(req);
+    sendJson(res, 200, await runSelfTest(input));
+    return true;
+  }
+
   if (method === "GET" && path === "/api/projects") {
     const projectQuery = {
       q: url.searchParams.get("q") ?? "",
       limit: url.searchParams.get("limit"),
+      cursor: url.searchParams.get("cursor"),
+      createdAfter: url.searchParams.get("createdAfter"),
+      includeArchived: boolParam(url.searchParams.get("includeArchived"), false),
+      paginated: true,
     };
-    const projects = await listProjects(projectQuery);
+    const page = await listProjects(projectQuery);
     const total = await countProjects(projectQuery);
     sendJson(res, 200, {
-      projects,
-      count: projects.length,
+      projects: page.items,
+      count: page.count,
       total,
-      hasMore: projects.length < total,
+      hasMore: page.hasMore,
+      nextCursor: page.nextCursor,
     });
     return true;
   }
@@ -204,19 +230,37 @@ async function route(req, res) {
 
   const projectMatch = path.match(/^\/api\/projects\/([^/]+)$/);
   if (method === "GET" && projectMatch) {
-    sendJson(res, 200, { project: await getProject(projectMatch[1]) });
+    const projectId = assertUuid(projectMatch[1], "projectId");
+    sendJson(res, 200, { project: await getProject(projectId) });
     return true;
   }
 
   const projectTicketsMatch = path.match(/^\/api\/projects\/([^/]+)\/tickets$/);
   if (method === "GET" && projectTicketsMatch) {
-    sendJson(res, 200, { tickets: await listProjectTickets(projectTicketsMatch[1]) });
+    const projectId = assertUuid(projectTicketsMatch[1], "projectId");
+    const page = await listProjectTickets(projectId, {
+      limit: url.searchParams.get("limit"),
+      cursor: url.searchParams.get("cursor"),
+      q: url.searchParams.get("q") ?? "",
+      createdAfter: url.searchParams.get("createdAfter"),
+      includeArchived: boolParam(url.searchParams.get("includeArchived"), false),
+      paginated: true,
+    });
+    sendJson(res, 200, { tickets: page.items, count: page.count, hasMore: page.hasMore, nextCursor: page.nextCursor });
     return true;
   }
 
   const availableTicketsMatch = path.match(/^\/api\/projects\/([^/]+)\/available-tickets$/);
   if (method === "GET" && availableTicketsMatch) {
-    sendJson(res, 200, { tickets: await getAvailableTickets(availableTicketsMatch[1]) });
+    const projectId = assertUuid(availableTicketsMatch[1], "projectId");
+    const page = await getAvailableTickets(projectId, {
+      limit: url.searchParams.get("limit"),
+      cursor: url.searchParams.get("cursor"),
+      createdAfter: url.searchParams.get("createdAfter"),
+      includeArchived: boolParam(url.searchParams.get("includeArchived"), false),
+      paginated: true,
+    });
+    sendJson(res, 200, { tickets: page.items, count: page.count, hasMore: page.hasMore, nextCursor: page.nextCursor });
     return true;
   }
 
@@ -230,24 +274,47 @@ async function route(req, res) {
   if (method === "POST" && path === "/api/tickets") {
     await requireAuth(req);
     const input = await bodyJson(req);
+    assertUuid(input.projectId, "projectId");
+    optionalUuid(input.actorAgentId, "agentId");
     sendJson(res, 201, await createTicket(input));
     return true;
   }
 
   if (method === "GET" && path === "/api/tickets/search") {
+    const status = url.searchParams.get("status");
     sendJson(res, 200, {
-      tickets: await searchTickets({
-        projectId: url.searchParams.get("projectId"),
-        q: url.searchParams.get("q") ?? "",
-        status: url.searchParams.get("status"),
-      }),
+      ...(await (async () => {
+        const page = await searchTickets({
+          projectId: optionalUuid(url.searchParams.get("projectId"), "projectId"),
+          q: url.searchParams.get("q") ?? "",
+          status: assertEnum(status, "status", [
+            "Draft",
+            "Ready",
+            "Claimed",
+            "In Progress",
+            "Blocked",
+            "Proof Submitted",
+            "Verification Failed",
+            "Done",
+            "Canceled",
+            "Reopened",
+          ]),
+          limit: url.searchParams.get("limit"),
+          cursor: url.searchParams.get("cursor"),
+          createdAfter: url.searchParams.get("createdAfter"),
+          includeArchived: boolParam(url.searchParams.get("includeArchived"), false),
+          paginated: true,
+        });
+        return { tickets: page.items, count: page.count, hasMore: page.hasMore, nextCursor: page.nextCursor };
+      })()),
     });
     return true;
   }
 
   const ticketMatch = path.match(/^\/api\/tickets\/([^/]+)$/);
   if (method === "GET" && ticketMatch) {
-    const ticket = await getTicket(ticketMatch[1]);
+    const ticketId = assertUuid(ticketMatch[1], "ticketId");
+    const ticket = await getTicket(ticketId);
     const artifacts = await listProofArtifacts(ticket.id);
     sendJson(res, 200, { ticket, artifacts });
     return true;
@@ -255,22 +322,30 @@ async function route(req, res) {
 
   if (method === "PATCH" && ticketMatch) {
     await requireAuth(req);
+    const ticketId = assertUuid(ticketMatch[1], "ticketId");
     const input = await bodyJson(req);
-    sendJson(res, 200, await updateTicket({ ticketId: ticketMatch[1], ...input }));
+    assertUuid(input.agentId, "agentId");
+    sendJson(res, 200, await updateTicket({ ticketId, ...input }));
     return true;
   }
 
   const actionMatch = path.match(/^\/api\/tickets\/([^/]+)\/([^/]+)$/);
   if (actionMatch) {
-    const ticketId = actionMatch[1];
+    const ticketId = assertUuid(actionMatch[1], "ticketId");
     const action = actionMatch[2];
 
     if (method === "GET" && action === "events") {
+      const page = await getTicketEvents(ticketId, {
+        limit: url.searchParams.get("limit"),
+        cursor: url.searchParams.get("cursor"),
+        includeData: url.searchParams.get("includeData") !== "false",
+        paginated: true,
+      });
       sendJson(res, 200, {
-        events: await getTicketEvents(ticketId, {
-          limit: url.searchParams.get("limit"),
-          includeData: url.searchParams.get("includeData") !== "false",
-        }),
+        events: page.items,
+        count: page.count,
+        hasMore: page.hasMore,
+        nextCursor: page.nextCursor,
       });
       return true;
     }
@@ -287,6 +362,12 @@ async function route(req, res) {
 
     await requireAuth(req);
     const input = await bodyJson(req);
+    if (["claim", "lease", "release", "tests", "artifact", "done", "blocked"].includes(action)) {
+      assertUuid(input.agentId, "agentId");
+    }
+    if (["reject-proof", "reopen"].includes(action)) {
+      optionalUuid(input.actorAgentId, "agentId");
+    }
 
     if (method === "POST" && action === "claim") {
       sendJson(res, 200, await claimTicket({ ticketId, ...input }));
@@ -337,6 +418,7 @@ async function route(req, res) {
     }
 
     if (method === "POST" && action === "dependencies") {
+      assertUuid(input.dependsOnTicketId, "dependsOnTicketId");
       sendJson(res, 201, {
         dependency: await addTicketDependency({
           ticketId,
@@ -350,24 +432,34 @@ async function route(req, res) {
   const filesMatch = path.match(/^\/api\/tickets\/([^/]+)\/files\/(claim|release)$/);
   if (filesMatch) {
     await requireAuth(req);
+    const ticketId = assertUuid(filesMatch[1], "ticketId");
     const input = await bodyJson(req);
+    assertUuid(input.agentId, "agentId");
     if (method === "POST" && filesMatch[2] === "claim") {
-      sendJson(res, 200, await claimFiles({ ticketId: filesMatch[1], ...input }));
+      sendJson(res, 200, await claimFiles({ ticketId, ...input }));
       return true;
     }
     if (method === "POST" && filesMatch[2] === "release") {
-      sendJson(res, 200, await releaseFiles({ ticketId: filesMatch[1], ...input }));
+      sendJson(res, 200, await releaseFiles({ ticketId, ...input }));
       return true;
     }
   }
 
   if (method === "GET" && path === "/api/file-claims") {
+    const page = await getFileClaims({
+      projectId: optionalUuid(url.searchParams.get("projectId"), "projectId"),
+      ticketId: optionalUuid(url.searchParams.get("ticketId"), "ticketId"),
+      activeOnly: url.searchParams.get("activeOnly") !== "false",
+      limit: url.searchParams.get("limit"),
+      cursor: url.searchParams.get("cursor"),
+      includeArchived: boolParam(url.searchParams.get("includeArchived"), false),
+      paginated: true,
+    });
     sendJson(res, 200, {
-      claims: await getFileClaims({
-        projectId: url.searchParams.get("projectId"),
-        ticketId: url.searchParams.get("ticketId"),
-        activeOnly: url.searchParams.get("activeOnly") !== "false",
-      }),
+      claims: page.items,
+      count: page.count,
+      hasMore: page.hasMore,
+      nextCursor: page.nextCursor,
     });
     return true;
   }
@@ -381,7 +473,14 @@ async function route(req, res) {
 
   const agentWorkMatch = path.match(/^\/api\/agents\/([^/]+)\/work$/);
   if (method === "GET" && agentWorkMatch) {
-    sendJson(res, 200, { tickets: await listAgentWork(agentWorkMatch[1]) });
+    const agentId = assertUuid(agentWorkMatch[1], "agentId");
+    const page = await listAgentWork(agentId, {
+      limit: url.searchParams.get("limit"),
+      cursor: url.searchParams.get("cursor"),
+      includeArchived: boolParam(url.searchParams.get("includeArchived"), false),
+      paginated: true,
+    });
+    sendJson(res, 200, { tickets: page.items, count: page.count, hasMore: page.hasMore, nextCursor: page.nextCursor });
     return true;
   }
 
@@ -389,6 +488,23 @@ async function route(req, res) {
     const objectKey = url.searchParams.get("objectKey");
     if (!objectKey) throw new ObjectiveError("object_key_required", "objectKey query parameter is required.");
     sendJson(res, 200, { url: await getArtifactUrl(objectKey) });
+    return true;
+  }
+
+  const artifactMatch = path.match(/^\/api\/artifacts\/([^/]+)\/(url|download)$/);
+  if (method === "GET" && artifactMatch) {
+    const artifactId = assertUuid(artifactMatch[1], "artifactId");
+    const artifact = await getArtifactById(artifactId);
+    if (artifactMatch[2] === "url") {
+      sendJson(res, 200, {
+        artifact,
+        downloadUrl: artifact.downloadUrl,
+        presignedUrl: artifact.presignedUrl,
+      });
+      return true;
+    }
+    res.writeHead(302, { location: artifact.presignedUrl });
+    res.end();
     return true;
   }
 
@@ -404,8 +520,9 @@ export async function handleApi(req, res) {
       sendJson(res, 400, { error: "invalid_json", message: err.message });
       return true;
     }
-    if (err instanceof ObjectiveError) {
-      sendJson(res, err.status, { error: err.code, message: err.message, details: err.details });
+    const normalized = normalizeDatabaseError(err);
+    if (normalized instanceof ObjectiveError) {
+      sendJson(res, normalized.status, { error: normalized.code, message: normalized.message, details: normalized.details });
       return true;
     }
     const requestId = crypto.randomUUID();

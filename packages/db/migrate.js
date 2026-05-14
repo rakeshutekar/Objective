@@ -15,6 +15,7 @@ export async function migrate() {
 
   const migrations = [
     ["001_initial", join(__dirname, "migrations", "001_initial.sql")],
+    ["002_agent_ergonomics", join(__dirname, "migrations", "002_agent_ergonomics.sql")],
   ];
 
   for (const [version, path] of migrations) {

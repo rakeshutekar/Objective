@@ -24,6 +24,10 @@
         </nav>
         <section class="project-panel">
           <div class="panel-title">Projects</div>
+          <label class="toggle-row">
+            <input id="include-archived-toggle" type="checkbox" />
+            <span>Archived</span>
+          </label>
           <div id="project-list" class="project-list"></div>
           <form id="project-form" class="compact-form">
             <input name="name" placeholder="New project" required />
@@ -88,6 +92,7 @@
             <div>
               <h2>Local Connection</h2>
               <p>Objective is running locally. Agents connect through the MCP server and shared local API.</p>
+              <button id="self-test-button" type="button">Run Self-Test</button>
             </div>
             <dl>
               <dt>UI/API</dt>
@@ -97,6 +102,13 @@
               <dt>Default agent key</dt>
               <dd>dev-agent-key</dd>
             </dl>
+          </section>
+          <section class="surface settings-grid">
+            <div>
+              <h2>Runtime</h2>
+              <p id="runtime-status" class="muted">Loading runtime metadata...</p>
+            </div>
+            <div id="self-test-result" class="status-list"></div>
           </section>
         </section>
       </main>
