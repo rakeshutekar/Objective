@@ -220,7 +220,13 @@ export function createTools(client = new ObjectiveClient()) {
     }, ["agentId"]), async (args) => client.get(`/api/agents/${args.agentId}/work`)),
     tool("objective_get_ticket_events", "Read append-only ticket event history.", schema({
       ticketId: string,
-    }, ["ticketId"]), async (args) => client.get(`/api/tickets/${args.ticketId}/events`)),
+      limit: { type: "number" },
+    }, ["ticketId"]), async (args) => {
+      const params = new URLSearchParams();
+      if (args.limit) params.set("limit", String(args.limit));
+      const suffix = params.size ? `?${params}` : "";
+      return client.get(`/api/tickets/${args.ticketId}/events${suffix}`);
+    }),
   ];
 }
 

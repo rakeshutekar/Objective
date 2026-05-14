@@ -21,6 +21,8 @@ export const config = {
   ),
   agentApiKey: env("OBJECTIVE_AGENT_API_KEY", "dev-agent-key"),
   adminToken: env("OBJECTIVE_ADMIN_TOKEN", "dev-admin-token"),
+  apiRequestTimeoutMs: intEnv("OBJECTIVE_API_REQUEST_TIMEOUT_MS", 10_000),
+  healthCheckTimeoutMs: intEnv("OBJECTIVE_HEALTH_CHECK_TIMEOUT_MS", 1_500),
   leaseTtlSeconds: intEnv("OBJECTIVE_LEASE_TTL_SECONDS", 300),
   artifactMaxBytes: intEnv("OBJECTIVE_ARTIFACT_MAX_BYTES", 10 * 1024 * 1024),
   storage: {

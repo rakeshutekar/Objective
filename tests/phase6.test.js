@@ -73,6 +73,10 @@ test("core API supports project and ticket workflow", async () => {
     const events = await request(base, `/api/tickets/${ticket.body.ticket.id}/events`);
     assert.equal(events.response.status, 200);
     assert.ok(events.body.events.length >= 2);
+
+    const limitedEvents = await request(base, `/api/tickets/${ticket.body.ticket.id}/events?limit=1`);
+    assert.equal(limitedEvents.response.status, 200);
+    assert.equal(limitedEvents.body.events.length, 1);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

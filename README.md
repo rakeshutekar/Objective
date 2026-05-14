@@ -332,6 +332,9 @@ DATABASE_URL=postgres://objective:objective@localhost:5432/objective
 OBJECTIVE_API_BASE=http://localhost:3000
 OBJECTIVE_AGENT_API_KEY=dev-agent-key
 OBJECTIVE_ADMIN_API_KEY=dev-admin-key
+OBJECTIVE_API_REQUEST_TIMEOUT_MS=10000
+OBJECTIVE_HEALTH_CHECK_TIMEOUT_MS=1500
+OBJECTIVE_MCP_PRETTY=false
 MINIO_ENDPOINT=localhost
 MINIO_PORT=9000
 MINIO_ACCESS_KEY=objective
@@ -414,6 +417,17 @@ Required evidence:
 | Actual files changed | Creates an execution record |
 
 If any requirement is missing, Objective moves the ticket to `Verification Failed` and records an event.
+
+## Performance And Token Defaults
+
+Objective keeps agent tool calls bounded and compact by default:
+
+- MCP responses use compact JSON unless `OBJECTIVE_MCP_PRETTY=true`.
+- Agent API requests time out after `OBJECTIVE_API_REQUEST_TIMEOUT_MS`.
+- Health checks run database and storage checks in parallel with `OBJECTIVE_HEALTH_CHECK_TIMEOUT_MS`.
+- Ticket event reads default to a bounded page and support a `limit` argument.
+
+These defaults reduce tool latency and token usage while keeping the full structured payload available to agents.
 
 ## Status Model
 

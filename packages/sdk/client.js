@@ -7,22 +7,36 @@ export class ObjectiveClient {
   }
 
   async request(method, path, body = undefined) {
-    const response = await fetch(`${this.apiBase}${path}`, {
-      method,
-      headers: {
-        authorization: `Bearer ${this.apiKey}`,
-        ...(body ? { "content-type": "application/json" } : {}),
-      },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    const payload = await response.json();
-    if (!response.ok) {
-      const err = new Error(payload.message || "Objective API request failed.");
-      err.status = response.status;
-      err.payload = payload;
-      throw err;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), config.apiRequestTimeoutMs);
+    try {
+      const response = await fetch(`${this.apiBase}${path}`, {
+        method,
+        signal: controller.signal,
+        headers: {
+          authorization: `Bearer ${this.apiKey}`,
+          ...(body ? { "content-type": "application/json" } : {}),
+        },
+        body: body ? JSON.stringify(body) : undefined,
+      }).catch((err) => {
+        if (err.name === "AbortError") {
+          const timeout = new Error(`Objective API request timed out after ${config.apiRequestTimeoutMs}ms.`);
+          timeout.code = "objective_api_timeout";
+          throw timeout;
+        }
+        throw err;
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        const err = new Error(payload.message || "Objective API request failed.");
+        err.status = response.status;
+        err.payload = payload;
+        throw err;
+      }
+      return payload;
+    } finally {
+      clearTimeout(timer);
     }
-    return payload;
   }
 
   get(path) {

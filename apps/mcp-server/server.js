@@ -3,6 +3,11 @@ import { createTools, publicToolDefinitions } from "./tools.js";
 
 const tools = createTools();
 const toolMap = new Map(tools.map((tool) => [tool.name, tool]));
+const prettyResponses = process.env.OBJECTIVE_MCP_PRETTY === "true";
+
+function toolText(payload) {
+  return JSON.stringify(payload, null, prettyResponses ? 2 : 0);
+}
 
 function write(message) {
   process.stdout.write(`${JSON.stringify(message)}\n`);
@@ -21,7 +26,7 @@ async function handle(request) {
     result(request.id, {
       protocolVersion: "2024-11-05",
       capabilities: { tools: {} },
-      serverInfo: { name: "objective", version: "0.1.1" },
+      serverInfo: { name: "objective", version: "0.1.2" },
     });
     return;
   }
@@ -41,7 +46,7 @@ async function handle(request) {
           content: [
             {
               type: "text",
-              text: JSON.stringify(payload, null, 2),
+              text: toolText(payload),
             },
           ],
         });
@@ -58,7 +63,7 @@ async function handle(request) {
                   details: err.payload?.details,
                 },
                 null,
-                2,
+                prettyResponses ? 2 : 0,
               ),
             },
           ],
@@ -72,7 +77,7 @@ async function handle(request) {
         content: [
           {
             type: "text",
-            text: JSON.stringify({
+            text: toolText({
               ok: true,
               service: "objective-mcp",
               apiBase: config.apiBase,

@@ -89,6 +89,11 @@ test("MCP tools can create, read, claim, and update Objective tickets", async ()
           },
         }),
       );
+      const compactTicketResponse = await call("tools/call", {
+        name: "objective_get_ticket",
+        arguments: { ticketId: ticket.ticket.id },
+      });
+      assert.equal(compactTicketResponse.result.content[0].text.includes("\n"), false);
       const claim = parseToolText(
         await call("tools/call", {
           name: "objective_claim_ticket",

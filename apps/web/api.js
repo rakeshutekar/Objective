@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { ObjectiveError } from "../../packages/core/errors.js";
 import { config } from "../../packages/core/config.js";
+import { withTimeout } from "../../packages/core/timeout.js";
 import {
   addTicketDependency,
   attachArtifact,
@@ -63,6 +64,24 @@ async function requireAuth(req) {
 async function dbHealth() {
   await query("SELECT 1");
   return true;
+}
+
+async function timedHealth(label, check) {
+  const startedAt = Date.now();
+  try {
+    await withTimeout(
+      check(),
+      config.healthCheckTimeoutMs,
+      `${label} health check timed out after ${config.healthCheckTimeoutMs}ms.`,
+    );
+    return { status: "ok", latencyMs: Date.now() - startedAt };
+  } catch (err) {
+    return {
+      status: "error",
+      latencyMs: Date.now() - startedAt,
+      message: err.message,
+    };
+  }
 }
 
 async function realtimeSnapshot() {
@@ -140,19 +159,17 @@ async function route(req, res) {
   const path = url.pathname;
 
   if (method === "GET" && path === "/api/health") {
-    let database = "ok";
-    let storage = "ok";
-    try {
-      await dbHealth();
-    } catch {
-      database = "error";
-    }
-    try {
-      await ensureBucket();
-    } catch {
-      storage = "error";
-    }
-    sendJson(res, 200, { ok: database === "ok" && storage === "ok", service: "objective-web", database, storage });
+    const [database, storage] = await Promise.all([
+      timedHealth("database", dbHealth),
+      timedHealth("storage", ensureBucket),
+    ]);
+    sendJson(res, 200, {
+      ok: database.status === "ok" && storage.status === "ok",
+      service: "objective-web",
+      database: database.status,
+      storage: storage.status,
+      checks: { database, storage },
+    });
     return true;
   }
 
@@ -237,7 +254,7 @@ async function route(req, res) {
     const action = actionMatch[2];
 
     if (method === "GET" && action === "events") {
-      sendJson(res, 200, { events: await getTicketEvents(ticketId) });
+      sendJson(res, 200, { events: await getTicketEvents(ticketId, { limit: url.searchParams.get("limit") }) });
       return true;
     }
 

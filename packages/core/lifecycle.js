@@ -819,15 +819,17 @@ export async function heartbeat({ agentId, ticketId = null, sessionId = null, me
   return result.rows[0];
 }
 
-export async function getTicketEvents(ticketId) {
+export async function getTicketEvents(ticketId, { limit = 50 } = {}) {
+  const safeLimit = Math.min(Math.max(Number.parseInt(limit, 10) || 50, 1), 200);
   const result = await query(
     `
       SELECT *
       FROM ticket_events
       WHERE ticket_id = $1
       ORDER BY created_at ASC
+      LIMIT $2
     `,
-    [ticketId],
+    [ticketId, safeLimit],
   );
   return result.rows;
 }
