@@ -96,6 +96,15 @@ test("manifest and bootstrap expose plugin status and stable agent identity", as
       );
       assert.equal(first.health.ok, true);
       assert.equal(first.agent.id, second.agent.id);
+      const byAgentId = parseToolText(
+        await call("objective_agent_bootstrap", {
+          agentId: first.agent.id,
+          limit: 3,
+        }),
+      );
+      assert.equal(byAgentId.agent.id, first.agent.id);
+      assert.equal(byAgentId.agent.name, first.agent.name);
+      assert.notEqual(byAgentId.agent.name, "Objective Agent");
       assert.ok(Array.isArray(first.availableTickets));
       assert.ok(Array.isArray(first.activeWork));
       assert.equal(first.activeLeasesScope, "agent");

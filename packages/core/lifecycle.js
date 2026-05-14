@@ -4,7 +4,7 @@ import { assertCondition, ObjectiveError } from "./errors.js";
 import { withIdempotency } from "./idempotency.js";
 import { appendCursorFilter, cursorFromRow, pageLimit, pageResult } from "./pagination.js";
 import { normalizePathPattern, patternsOverlap } from "./path-locks.js";
-import { parseIsoDate } from "./validation.js";
+import { assertUuid, parseIsoDate } from "./validation.js";
 import { query, withTransaction } from "../db/client.js";
 import { putArtifactObject, presignedArtifactUrl } from "../storage/minio.js";
 
@@ -172,6 +172,13 @@ export async function createAgent({ name, kind = "unknown", externalKey = null, 
         "INSERT INTO agents(name, kind, metadata) VALUES ($1, $2, $3) RETURNING *",
         [name, kind, JSON.stringify(metadata)],
       );
+  return result.rows[0];
+}
+
+export async function getAgent(agentId) {
+  assertUuid(agentId, "agentId");
+  const result = await query("SELECT * FROM agents WHERE id = $1", [agentId]);
+  assertCondition(result.rowCount === 1, "agent_not_found", "Agent not found.", 404);
   return result.rows[0];
 }
 

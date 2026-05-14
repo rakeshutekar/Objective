@@ -8,6 +8,7 @@ import {
   createAgent,
   createProject,
   createTicket,
+  getAgent,
   getArtifactUrl,
   getAvailableTickets,
   getFileClaims,
@@ -213,7 +214,7 @@ export async function agentBootstrap({
   pluginKind = kind === "claude" ? "claude" : "codex",
 }) {
   const agent = agentId
-    ? { id: agentId, name: agentName ?? name ?? "Objective Agent", kind }
+    ? await getAgent(agentId)
     : await createAgent({
         name: agentName ?? name ?? "Objective Agent",
         kind,
