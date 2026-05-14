@@ -226,13 +226,15 @@ export async function agentBootstrap({
   const selectedProjectId = projectId ?? projects.items?.[0]?.id ?? projects[0]?.id ?? null;
   const project = selectedProjectId ? await getProject(selectedProjectId) : null;
   const availableTickets = selectedProjectId ? await getAvailableTickets(selectedProjectId, { limit }) : { items: [] };
-  const activeLeases = agent.id ? await getFileClaims({ activeOnly: true, limit }) : { items: [] };
+  const activeLeases = agent.id ? await getFileClaims({ agentId: agent.id, activeOnly: true, limit }) : { items: [] };
   return {
     agent,
     project,
     availableTickets: (availableTickets.items ?? availableTickets).map(ticketSummary),
     activeWork: (work.items ?? work).map(ticketSummary),
     activeLeases: (activeLeases.items ?? activeLeases).map(fileClaimSummary),
+    activeLeasesScope: "agent",
+    systemLeasesTool: "objective_get_file_claims",
     manifest: compactManifest(tools, pluginKind),
   };
 }

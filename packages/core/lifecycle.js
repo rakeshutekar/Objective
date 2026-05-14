@@ -720,6 +720,7 @@ export async function releaseFiles({ ticketId, agentId, leaseToken, files = [] }
 export async function getFileClaims({
   projectId = null,
   ticketId = null,
+  agentId = null,
   activeOnly = true,
   limit = null,
   cursor = null,
@@ -735,6 +736,10 @@ export async function getFileClaims({
   if (ticketId) {
     params.push(ticketId);
     where.push(`c.ticket_id = $${params.length}`);
+  }
+  if (agentId) {
+    params.push(agentId);
+    where.push(`c.agent_id = $${params.length}`);
   }
   if (activeOnly) {
     where.push("c.released_at IS NULL");

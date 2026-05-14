@@ -196,6 +196,7 @@ export function createTools(client = new ObjectiveClient()) {
     tool("objective_get_file_claims", "List active file claims.", schema({
       projectId: string,
       ticketId: string,
+      agentId: string,
       activeOnly: bool,
       limit: number,
       cursor: string,
@@ -204,6 +205,7 @@ export function createTools(client = new ObjectiveClient()) {
       const params = new URLSearchParams();
       if (args.projectId) params.set("projectId", args.projectId);
       if (args.ticketId) params.set("ticketId", args.ticketId);
+      if (args.agentId) params.set("agentId", args.agentId);
       if (args.activeOnly === false) params.set("activeOnly", "false");
       if (args.limit !== undefined) params.set("limit", String(args.limit));
       if (args.cursor) params.set("cursor", args.cursor);

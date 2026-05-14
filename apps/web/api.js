@@ -449,6 +449,7 @@ async function route(req, res) {
     const page = await getFileClaims({
       projectId: optionalUuid(url.searchParams.get("projectId"), "projectId"),
       ticketId: optionalUuid(url.searchParams.get("ticketId"), "ticketId"),
+      agentId: optionalUuid(url.searchParams.get("agentId"), "agentId"),
       activeOnly: url.searchParams.get("activeOnly") !== "false",
       limit: url.searchParams.get("limit"),
       cursor: url.searchParams.get("cursor"),

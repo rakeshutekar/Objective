@@ -98,10 +98,81 @@ test("manifest and bootstrap expose plugin status and stable agent identity", as
       assert.equal(first.agent.id, second.agent.id);
       assert.ok(Array.isArray(first.availableTickets));
       assert.ok(Array.isArray(first.activeWork));
+      assert.equal(first.activeLeasesScope, "agent");
+      assert.equal(first.systemLeasesTool, "objective_get_file_claims");
       assert.equal(first.manifest.tools, undefined);
       assert.equal(first.manifest.toolsOmitted, true);
       assert.ok(first.manifest.toolCount > 0);
       assert.equal(first.manifest.toolManifestTool, "objective_tool_manifest");
+
+      const project = parseToolText(
+        await call("objective_create_project", {
+          name: `Phase 16 Scoped Leases ${externalKey}`,
+        }),
+      );
+      const ownTicket = parseToolText(
+        await call("objective_create_ticket", {
+          projectId: project.project.id,
+          actorAgentId: first.agent.id,
+          title: "Own active lease",
+          why: "Bootstrap should show this agent's leases",
+          description: "Scoped bootstrap lease fixture.",
+          plannedFiles: [`phase16/${externalKey}/own.ts`],
+        }),
+      );
+      await call("objective_claim_ticket_and_files", {
+        ticketId: ownTicket.ticket.id,
+        agentId: first.agent.id,
+        files: [`phase16/${externalKey}/own.ts`],
+      });
+
+      const otherAgent = parseToolText(
+        await call("objective_create_agent", {
+          name: "Phase 16 Other Agent",
+          kind: "claude",
+        }),
+      );
+      const otherTicket = parseToolText(
+        await call("objective_create_ticket", {
+          projectId: project.project.id,
+          actorAgentId: otherAgent.agent.id,
+          title: "Other active lease",
+          why: "Bootstrap should hide unrelated leases",
+          description: "Global lease noise fixture.",
+          plannedFiles: [`phase16/${externalKey}/other.ts`],
+        }),
+      );
+      await call("objective_claim_ticket_and_files", {
+        ticketId: otherTicket.ticket.id,
+        agentId: otherAgent.agent.id,
+        files: [`phase16/${externalKey}/other.ts`],
+      });
+
+      const scoped = parseToolText(
+        await call("objective_agent_bootstrap", {
+          agentId: first.agent.id,
+          agentName: "Phase 16 Bootstrap Agent",
+          kind: "codex",
+          limit: 10,
+        }),
+      );
+      assert.ok(scoped.activeLeases.some((claim) => claim.pathPattern.endsWith("/own.ts")));
+      assert.equal(scoped.activeLeases.some((claim) => claim.pathPattern.endsWith("/other.ts")), false);
+      assert.ok(scoped.activeLeases.every((claim) => claim.agentId === first.agent.id));
+
+      const otherClaims = parseToolText(
+        await call("objective_get_file_claims", {
+          agentId: otherAgent.agent.id,
+          limit: 10,
+        }),
+      );
+      assert.ok(otherClaims.claims.some((claim) => claim.path_pattern.endsWith("/other.ts")));
+
+      await call("objective_archive_project", {
+        projectId: project.project.id,
+        archiveTickets: true,
+        reason: "phase16 scoped lease cleanup",
+      });
     });
   } finally {
     await new Promise((resolve) => server.close(resolve));
