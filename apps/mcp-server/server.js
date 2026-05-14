@@ -26,7 +26,7 @@ async function handle(request) {
     result(request.id, {
       protocolVersion: "2024-11-05",
       capabilities: { tools: {} },
-      serverInfo: { name: "objective", version: "0.1.2" },
+      serverInfo: { name: "objective", version: "0.1.3" },
     });
     return;
   }

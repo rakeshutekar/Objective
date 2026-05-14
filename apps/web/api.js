@@ -7,6 +7,7 @@ import {
   attachArtifact,
   claimFiles,
   claimTicket,
+  countProjects,
   createAgent,
   createProject,
   createTicket,
@@ -179,7 +180,18 @@ async function route(req, res) {
   }
 
   if (method === "GET" && path === "/api/projects") {
-    sendJson(res, 200, { projects: await listProjects() });
+    const projectQuery = {
+      q: url.searchParams.get("q") ?? "",
+      limit: url.searchParams.get("limit"),
+    };
+    const projects = await listProjects(projectQuery);
+    const total = await countProjects(projectQuery);
+    sendJson(res, 200, {
+      projects,
+      count: projects.length,
+      total,
+      hasMore: projects.length < total,
+    });
     return true;
   }
 
@@ -254,7 +266,12 @@ async function route(req, res) {
     const action = actionMatch[2];
 
     if (method === "GET" && action === "events") {
-      sendJson(res, 200, { events: await getTicketEvents(ticketId, { limit: url.searchParams.get("limit") }) });
+      sendJson(res, 200, {
+        events: await getTicketEvents(ticketId, {
+          limit: url.searchParams.get("limit"),
+          includeData: url.searchParams.get("includeData") !== "false",
+        }),
+      });
       return true;
     }
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import test from "node:test";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { createServer } from "../apps/web/server.js";
 import { closePool } from "../packages/db/client.js";
 import { migrate } from "../packages/db/migrate.js";
@@ -172,6 +172,11 @@ test("local marketplace metadata exists for both Codex and Claude", async () => 
   const claude = JSON.parse(await readFile(".claude-plugin/marketplace.json", "utf8"));
   assert.equal(codex.plugins[0].name, "objective");
   assert.equal(claude.plugins[0].name, "objective");
+
+  const codexManifest = JSON.parse(await readFile("plugins/codex/.codex-plugin/plugin.json", "utf8"));
+  assert.equal(codexManifest.skills, "./skills/");
+  await access("plugins/codex/skills/objective/SKILL.md");
+  await access("plugins/claude/skills/objective/SKILL.md");
 });
 
 test.after(async () => {

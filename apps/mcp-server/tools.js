@@ -11,10 +11,19 @@ function schema(properties = {}, required = []) {
 
 const string = { type: "string" };
 const bool = { type: "boolean" };
+const number = { type: "number" };
 const stringArray = { type: "array", items: { type: "string" } };
 
 function tool(name, description, inputSchema, handler) {
   return { name, description, inputSchema, handler };
+}
+
+function compactProject(project) {
+  return {
+    id: project.id,
+    name: project.name,
+    description: project.description,
+  };
 }
 
 export function createTools(client = new ObjectiveClient()) {
@@ -29,9 +38,21 @@ export function createTools(client = new ObjectiveClient()) {
       name: string,
       kind: { type: "string", enum: ["codex", "claude", "human", "system", "unknown"] },
     }, ["name"]), async (args) => client.post("/api/agents", args)),
-    tool("objective_list_projects", "List Objective projects.", schema(), async () =>
-      client.get("/api/projects"),
-    ),
+    tool("objective_list_projects", "List Objective projects. Defaults to the 25 most recently updated projects to keep agent context compact.", schema({
+      limit: number,
+      q: string,
+    }), async (args) => {
+      const params = new URLSearchParams();
+      params.set("limit", String(args.limit ?? 25));
+      if (args.q) params.set("q", args.q);
+      const payload = await client.get(`/api/projects?${params}`);
+      return {
+        projects: payload.projects.map(compactProject),
+        count: payload.count,
+        total: payload.total,
+        hasMore: payload.hasMore,
+      };
+    }),
     tool("objective_create_project", "Create an Objective project.", schema({
       name: string,
       description: string,
@@ -220,10 +241,12 @@ export function createTools(client = new ObjectiveClient()) {
     }, ["agentId"]), async (args) => client.get(`/api/agents/${args.agentId}/work`)),
     tool("objective_get_ticket_events", "Read append-only ticket event history.", schema({
       ticketId: string,
-      limit: { type: "number" },
+      limit: number,
+      includeData: bool,
     }, ["ticketId"]), async (args) => {
       const params = new URLSearchParams();
-      if (args.limit) params.set("limit", String(args.limit));
+      params.set("limit", String(args.limit ?? 25));
+      params.set("includeData", args.includeData ? "true" : "false");
       const suffix = params.size ? `?${params}` : "";
       return client.get(`/api/tickets/${args.ticketId}/events${suffix}`);
     }),

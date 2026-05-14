@@ -58,6 +58,12 @@ function normalizeProject(row) {
   };
 }
 
+function boundedLimit(value, fallback, max) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return Math.min(parsed, max);
+}
+
 async function writeEvent(client, ticketId, actorAgentId, eventType, message, data = {}) {
   await client.query(
     `
@@ -104,9 +110,43 @@ export async function createProject({ name, description = "" }) {
   return normalizeProject(result.rows[0]);
 }
 
-export async function listProjects() {
-  const result = await query("SELECT * FROM projects ORDER BY created_at DESC");
+export async function listProjects({ q = "", limit = null } = {}) {
+  const params = [];
+  const where = [];
+  if (q) {
+    params.push(`%${q}%`);
+    where.push(`(name ILIKE $${params.length} OR description ILIKE $${params.length})`);
+  }
+
+  const safeLimit = boundedLimit(limit, null, 200);
+  let limitClause = "";
+  if (safeLimit) {
+    params.push(safeLimit);
+    limitClause = `LIMIT $${params.length}`;
+  }
+
+  const result = await query(
+    `
+      SELECT *
+      FROM projects
+      ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+      ORDER BY updated_at DESC, created_at DESC
+      ${limitClause}
+    `,
+    params,
+  );
   return result.rows.map(normalizeProject);
+}
+
+export async function countProjects({ q = "" } = {}) {
+  const params = [];
+  let where = "";
+  if (q) {
+    params.push(`%${q}%`);
+    where = `WHERE name ILIKE $1 OR description ILIKE $1`;
+  }
+  const result = await query(`SELECT count(*)::int AS count FROM projects ${where}`, params);
+  return result.rows[0].count;
 }
 
 export async function getProject(projectId) {
@@ -819,17 +859,24 @@ export async function heartbeat({ agentId, ticketId = null, sessionId = null, me
   return result.rows[0];
 }
 
-export async function getTicketEvents(ticketId, { limit = 50 } = {}) {
-  const safeLimit = Math.min(Math.max(Number.parseInt(limit, 10) || 50, 1), 200);
+export async function getTicketEvents(ticketId, { limit = 50, includeData = true } = {}) {
+  const safeLimit = boundedLimit(limit, 50, 200);
   const result = await query(
     `
       SELECT *
-      FROM ticket_events
-      WHERE ticket_id = $1
+      FROM (
+        SELECT *
+        FROM ticket_events
+        WHERE ticket_id = $1
+        ORDER BY created_at DESC
+        LIMIT $2
+      ) latest_events
       ORDER BY created_at ASC
-      LIMIT $2
     `,
     [ticketId, safeLimit],
   );
-  return result.rows;
+  if (includeData) {
+    return result.rows;
+  }
+  return result.rows.map(({ data, ...row }) => row);
 }

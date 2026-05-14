@@ -110,11 +110,45 @@ test("latency-sensitive MCP tools stay fast and compact", async () => {
         ticketId: ticket.ticket.id,
         limit: 5,
       });
+      const compactEvents = parseToolText(events.response);
+      assert.equal(Object.hasOwn(compactEvents.events[0], "data"), false);
 
       for (const [name, result] of Object.entries({ health, renew, update, events })) {
         assert.ok(result.ms < 1500, `${name} took ${result.ms.toFixed(1)}ms`);
         assert.equal(result.response.result.content[0].text.includes("\n"), false);
       }
+    });
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("agent-facing project lists are bounded and searchable", async () => {
+  await migrate();
+  const server = createServer();
+  await new Promise((resolve) => server.listen(0, resolve));
+  const apiBase = `http://127.0.0.1:${server.address().port}`;
+  const prefix = `Phase 13 Compact ${Date.now()} ${Math.random().toString(36).slice(2)}`;
+
+  try {
+    await withMcp({ OBJECTIVE_API_BASE: apiBase }, async (call) => {
+      for (let index = 0; index < 30; index += 1) {
+        parseToolText(
+          await call("objective_create_project", {
+            name: `${prefix} ${index.toString().padStart(2, "0")}`,
+            description: "Project list token guard",
+          }),
+        );
+      }
+
+      const projects = await timed(call, "objective_list_projects", { q: prefix });
+      const payload = parseToolText(projects.response);
+      assert.equal(payload.projects.length, 25);
+      assert.equal(Object.hasOwn(payload.projects[0], "createdAt"), false);
+      assert.equal(payload.hasMore, true);
+      assert.equal(payload.total, 30);
+      assert.equal(projects.response.result.content[0].text.includes("\n"), false);
+      assert.ok(projects.ms < 1500, `project list took ${projects.ms.toFixed(1)}ms`);
     });
   } finally {
     await new Promise((resolve) => server.close(resolve));

@@ -40,7 +40,7 @@ For UI work, attach a screenshot or computer-use/browser screenshot plus the loc
 
 ## Useful Tools
 
-- `objective_list_projects`
+- `objective_list_projects` - defaults to 25 compact recent projects; use `q` to search noisy local stores.
 - `objective_create_ticket`
 - `objective_get_ticket`
 - `objective_get_available_tickets`
@@ -51,4 +51,4 @@ For UI work, attach a screenshot or computer-use/browser screenshot plus the loc
 - `objective_validate_ticket_completion`
 - `objective_submit_done`
 - `objective_mark_blocked`
-- `objective_get_ticket_events`
+- `objective_get_ticket_events` - compact latest 25 events by default; set `includeData` when event payloads are needed.

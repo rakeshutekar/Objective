@@ -245,7 +245,7 @@ node apps/mcp-server/server.js
 Default local API values:
 
 ```text
-OBJECTIVE_API_BASE=http://localhost:3000
+OBJECTIVE_API_BASE=http://127.0.0.1:3000
 OBJECTIVE_AGENT_API_KEY=dev-agent-key
 ```
 
@@ -253,7 +253,7 @@ Smoke test:
 
 ```bash
 printf '{"jsonrpc":"2.0","id":1,"method":"tools/list"}\n' \
-  | OBJECTIVE_API_BASE=http://localhost:3000 \
+  | OBJECTIVE_API_BASE=http://127.0.0.1:3000 \
     OBJECTIVE_AGENT_API_KEY=dev-agent-key \
     node apps/mcp-server/server.js
 ```
@@ -329,7 +329,7 @@ Common variables:
 
 ```text
 DATABASE_URL=postgres://objective:objective@localhost:5432/objective
-OBJECTIVE_API_BASE=http://localhost:3000
+OBJECTIVE_API_BASE=http://127.0.0.1:3000
 OBJECTIVE_AGENT_API_KEY=dev-agent-key
 OBJECTIVE_ADMIN_API_KEY=dev-admin-key
 OBJECTIVE_API_REQUEST_TIMEOUT_MS=10000
@@ -394,12 +394,13 @@ The current test suite verifies:
 - search, proof rejection, reopen flows
 - 1000 local agent heartbeats
 - full MCP completion workflow
+- bounded MCP project and event responses
 - Codex and Claude plugin wrapper E2E completion
 
 Current local verification:
 
 ```text
-20 tests passing
+22 tests passing
 ```
 
 ## Completion Gate
@@ -423,9 +424,10 @@ If any requirement is missing, Objective moves the ticket to `Verification Faile
 Objective keeps agent tool calls bounded and compact by default:
 
 - MCP responses use compact JSON unless `OBJECTIVE_MCP_PRETTY=true`.
+- `objective_list_projects` returns 25 compact project summaries by default and accepts `limit` plus `q` for search.
 - Agent API requests time out after `OBJECTIVE_API_REQUEST_TIMEOUT_MS`.
 - Health checks run database and storage checks in parallel with `OBJECTIVE_HEALTH_CHECK_TIMEOUT_MS`.
-- Ticket event reads default to a bounded page and support a `limit` argument.
+- `objective_get_ticket_events` returns the latest 25 compact events by default; pass `includeData: true` for full event data.
 
 These defaults reduce tool latency and token usage while keeping the full structured payload available to agents.
 

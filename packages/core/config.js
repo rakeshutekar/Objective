@@ -14,7 +14,7 @@ export function intEnv(name, fallback) {
 
 export const config = {
   port: intEnv("OBJECTIVE_PORT", 3000),
-  apiBase: env("OBJECTIVE_API_BASE", "http://localhost:3000"),
+  apiBase: env("OBJECTIVE_API_BASE", "http://127.0.0.1:3000"),
   databaseUrl: env(
     "OBJECTIVE_DATABASE_URL",
     "postgres://objective:objective@localhost:5432/objective",
