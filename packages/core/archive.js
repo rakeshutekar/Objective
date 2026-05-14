@@ -119,7 +119,7 @@ export async function archiveProject({ projectId, reason = "Archived by Objectiv
 export async function archiveTicket({ ticketId, reason = "Archived by Objective." }) {
   assertUuid(ticketId, "ticketId");
   return withTransaction(async (client) => {
-    const result = await client.query(
+    await client.query(
       `
         UPDATE tickets
         SET archived_at = COALESCE(archived_at, now()),
@@ -130,7 +130,8 @@ export async function archiveTicket({ ticketId, reason = "Archived by Objective.
       [ticketId, reason],
     );
     const released = await releaseArchivedTicketWork(client, ticketId, reason);
-    return { ticket: result.rows[0], ...released };
+    const ticket = await client.query("SELECT * FROM tickets WHERE id = $1", [ticketId]);
+    return { ticket: ticket.rows[0], ...released };
   });
 }
 

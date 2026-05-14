@@ -161,6 +161,10 @@ test("archive tools release active leases and file claims", async () => {
       );
       assert.equal(archivedTicket.releasedClaims, 1);
       assert.equal(archivedTicket.releasedTickets, 1);
+      assert.equal(archivedTicket.ticket.status, "Ready");
+      assert.equal(archivedTicket.ticket.assigned_agent_id, null);
+      assert.equal(archivedTicket.ticket.lease_token, null);
+      assert.equal(archivedTicket.ticket.lease_expires_at, null);
 
       const ticketClaims = parseToolText(
         await call("objective_get_file_claims", {
