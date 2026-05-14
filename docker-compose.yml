@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: objective-postgres
+    environment:
+      POSTGRES_DB: objective
+      POSTGRES_USER: objective
+      POSTGRES_PASSWORD: objective
+    ports:
+      - "5432:5432"
+    volumes:
+      - objective-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U objective -d objective"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: minio/minio:latest
+    container_name: objective-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: objective
+      MINIO_ROOT_PASSWORD: objective-secret
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - objective-minio:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  objective-postgres:
+  objective-minio:

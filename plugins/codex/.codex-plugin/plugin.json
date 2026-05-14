@@ -1,0 +1,37 @@
+{
+  "name": "objective",
+  "version": "0.1.0",
+  "description": "Local AI-agent ticketing system with project boards, file locks, tests, and proof gates.",
+  "author": {
+    "name": "Rakesh"
+  },
+  "license": "MIT",
+  "keywords": [
+    "tickets",
+    "agents",
+    "codex",
+    "claude",
+    "proof",
+    "workflow"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Objective",
+    "shortDescription": "Agent tickets with proof and file locks",
+    "longDescription": "Objective connects Codex and Claude agents to a local ticketing system where agents create, claim, update, test, prove, and complete work while humans monitor status in a local UI.",
+    "developerName": "Rakesh",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Use Objective to create and complete this task with proof.",
+      "Claim an Objective ticket before editing files.",
+      "Show my active Objective tickets and blockers."
+    ],
+    "brandColor": "#C8FF5D"
+  }
+}

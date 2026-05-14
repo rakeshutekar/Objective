@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "objective": {
+      "command": "node",
+      "args": ["./server.js"],
+      "cwd": ".",
+      "env": {
+        "OBJECTIVE_API_BASE": "http://localhost:3000",
+        "OBJECTIVE_AGENT_API_KEY": "dev-agent-key"
+      }
+    }
+  }
+}

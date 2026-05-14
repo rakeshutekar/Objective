@@ -1,0 +1,19 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "objective-local",
+  "description": "Local Objective plugin marketplace for Claude Code.",
+  "owner": {
+    "name": "Rakesh"
+  },
+  "plugins": [
+    {
+      "name": "objective",
+      "description": "Local AI-agent ticketing system with project boards, file locks, tests, and proof gates.",
+      "author": {
+        "name": "Rakesh"
+      },
+      "category": "productivity",
+      "source": "./plugins/claude"
+    }
+  ]
+}

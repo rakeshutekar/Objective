@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Objective</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-mark"></span>
+          <div>
+            <strong>Objective</strong>
+            <small>Local agent workboard</small>
+          </div>
+        </div>
+        <nav class="nav">
+          <button class="nav-item active" data-view="dashboard">Dashboard</button>
+          <button class="nav-item" data-view="board">Board</button>
+          <button class="nav-item" data-view="locks">File Locks</button>
+          <button class="nav-item" data-view="settings">Settings</button>
+        </nav>
+        <section class="project-panel">
+          <div class="panel-title">Projects</div>
+          <div id="project-list" class="project-list"></div>
+          <form id="project-form" class="compact-form">
+            <input name="name" placeholder="New project" required />
+            <button type="submit">Create</button>
+          </form>
+        </section>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Agent execution ledger</p>
+            <h1 id="page-title">Dashboard</h1>
+          </div>
+          <div class="health" id="health-pill">Checking...</div>
+        </header>
+
+        <section id="dashboard-view" class="view active">
+          <div class="metric-grid" id="metric-grid"></div>
+          <div class="two-column">
+            <section class="surface">
+              <div class="section-head">
+                <h2>Active Work</h2>
+                <button id="refresh-button">Refresh</button>
+              </div>
+              <div id="active-work" class="ticket-list"></div>
+            </section>
+            <section class="surface">
+              <div class="section-head">
+                <h2>Proof Review</h2>
+              </div>
+              <div id="proof-review" class="ticket-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="board-view" class="view">
+          <div class="section-head">
+            <h2 id="board-project-title">Project Board</h2>
+            <form id="ticket-form" class="ticket-form">
+              <input name="title" placeholder="Ticket title" required />
+              <input name="why" placeholder="Why this matters" required />
+              <input name="description" placeholder="Task description" required />
+              <input name="plannedFiles" placeholder="Files" />
+              <button type="submit">Add Ticket</button>
+            </form>
+          </div>
+          <div id="ticket-board" class="board"></div>
+        </section>
+
+        <section id="locks-view" class="view">
+          <section class="surface">
+            <div class="section-head">
+              <h2>Active File Locks</h2>
+            </div>
+            <div id="locks-list" class="lock-list"></div>
+          </section>
+        </section>
+
+        <section id="settings-view" class="view">
+          <section class="surface settings-grid">
+            <div>
+              <h2>Local Connection</h2>
+              <p>Objective is running locally. Agents connect through the MCP server and shared local API.</p>
+            </div>
+            <dl>
+              <dt>UI/API</dt>
+              <dd>http://localhost:3000</dd>
+              <dt>MCP server</dt>
+              <dd>node apps/mcp-server/server.js</dd>
+              <dt>Default agent key</dt>
+              <dd>dev-agent-key</dd>
+            </dl>
+          </section>
+        </section>
+      </main>
+
+      <aside class="detail-panel" id="detail-panel">
+        <div class="empty-detail">Select a ticket to inspect proof, tests, events, and file claims.</div>
+      </aside>
+    </div>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

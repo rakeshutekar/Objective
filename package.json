@@ -1,0 +1,36 @@
+{
+  "name": "objective",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local AI-agent ticketing system for Codex and Claude.",
+  "license": "MIT",
+  "scripts": {
+    "start": "node apps/web/server.js",
+    "start:mcp": "node apps/mcp-server/server.js",
+    "dev": "node apps/web/server.js",
+    "db:migrate": "node packages/db/migrate.js",
+    "db:seed": "node packages/db/seed.js",
+    "test": "node --test tests/*.test.js tests/e2e/*.test.js",
+    "test:phase1": "node --test tests/phase1.test.js",
+    "test:phase2": "node --test tests/phase2.test.js",
+    "test:phase3": "node --test tests/phase3.test.js",
+    "test:phase4": "node --test tests/phase4.test.js",
+    "test:phase5": "node --test tests/phase5.test.js",
+    "test:phase6": "node --test tests/phase6.test.js",
+    "test:phase7": "node --test tests/phase7.test.js",
+    "test:phase8": "node --test tests/phase8.test.js",
+    "test:phase9": "node --test tests/phase9.test.js",
+    "test:phase10": "node --test tests/phase10.test.js",
+    "test:phase11": "node --test tests/phase11.test.js",
+    "test:phase12": "node --test tests/phase12.test.js",
+    "test:e2e": "node --test tests/e2e/*.test.js"
+  },
+  "dependencies": {
+    "minio": "^8.0.6",
+    "pg": "^8.13.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

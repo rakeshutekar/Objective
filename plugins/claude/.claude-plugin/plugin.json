@@ -1,0 +1,17 @@
+{
+  "name": "objective",
+  "version": "0.1.0",
+  "description": "Local AI-agent ticketing system with project boards, file locks, tests, and proof gates.",
+  "author": {
+    "name": "Rakesh"
+  },
+  "license": "MIT",
+  "keywords": [
+    "tickets",
+    "agents",
+    "codex",
+    "claude",
+    "proof",
+    "workflow"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "objective": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/server.js"],
+      "env": {
+        "OBJECTIVE_API_BASE": "http://localhost:3000",
+        "OBJECTIVE_AGENT_API_KEY": "dev-agent-key"
+      }
+    }
+  }
+}
