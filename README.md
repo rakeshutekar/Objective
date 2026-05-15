@@ -31,11 +31,13 @@ Objective is local-first and runs on your machine. Codex and Claude connect to t
 - Required ticket fields: title, why, description, planned files, tests, proof URL, artifacts, final agent summary
 - Lease-based ticket claiming
 - File and glob-pattern locking
+- Archive and reopen cleanup for stale leases and file claims
 - Ticket dependencies with cycle prevention
 - Completion gate that rejects `Done` until evidence exists
 - Proof artifacts stored in object storage
 - Append-only event history per ticket
 - Agent heartbeat tracking
+- Agent sessions with human-readable or UUID session IDs
 - Codex plugin package
 - Claude plugin package
 - Shared MCP server with agent-safe tools
@@ -485,6 +487,27 @@ README.md
 
 Objective rejects overlapping active claims. Done and canceled tickets release active claims so other agents can continue.
 
+Archive and reopen flows also release active file claims and clear leases so old verification or cleanup work does not leave hidden locks behind.
+
+`objective_agent_bootstrap` returns only the bootstrapped agent's active leases. Use `objective_get_file_claims` for explicit system-wide lock inspection, or pass `agentId` to inspect one agent's locks.
+
+## Artifact And Session Ergonomics
+
+`objective_attach_artifact` accepts canonical artifact types plus common aliases:
+
+| Alias | Stored type |
+| --- | --- |
+| `log` | `test-log` |
+| `proof` | `text-proof` |
+| `json` | `json-proof` |
+| `file` | `other-file` |
+
+`objective_record_test_and_attach_log` returns a flat response with `testRun`, `artifact`, `artifactObject`, `ticket`, `lease`, `downloadUrl`, and `presignedUrl`.
+
+Artifact download URLs are normalized to `http://127.0.0.1:3000/...` by default for consistent agent logs.
+
+`objective_heartbeat` and `objective_keepalive` accept `sessionId` as either a UUID or a human-readable session label.
+
 ## Local-First By Design
 
 Objective is currently built for local development:
@@ -498,9 +521,13 @@ Objective is currently built for local development:
 
 This makes it useful for agent-heavy development on one machine. A future hosted version can keep the same MCP tool contract.
 
-## Open Source Readiness
+## Open Source
 
-Objective is ready to publish under the MIT License. Before creating the public GitHub repository, update the repository URL wherever you want permanent links, badges, or package metadata.
+Objective is published as an open-source project under the MIT License:
+
+```text
+https://github.com/rakeshutekar/Objective
+```
 
 The source license is declared consistently in:
 
@@ -524,7 +551,7 @@ The source license is declared consistently in:
 
 ## Contributing
 
-Contributions are welcome once the public repository is created.
+Contributions are welcome.
 
 Suggested contribution flow:
 
